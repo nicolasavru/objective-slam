@@ -54,6 +54,7 @@ for ii = 1:size(index_pairs,1)
                               s_r, n_r_s, s_i);
                             
 %       alpha_disc = alpha-mod(alpha,d_angle);
+      alpha = real(alpha)
       alpha_disc = quant(alpha,d_angle)+1;
       alpha_ind = round(alpha_disc/d_angle);
       
