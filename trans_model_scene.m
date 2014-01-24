@@ -27,7 +27,9 @@ rot_z = rotz(-1*atan2(n_tmp(2), n_tmp(1)));
 T_s_g = rot_z * rot_y * transm;
 
 point1 = T_m_g*[m_i 1].';
+point1 = point1(1:3);
 point2 = T_s_g*[s_i 1].';
+point2 = point2(1:3);
 alpha = acos(dot(point1,point2) / (norm(point1)*norm(point2)));
 
 end

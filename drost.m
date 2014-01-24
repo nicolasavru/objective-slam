@@ -48,21 +48,22 @@ disp('Downsampled');
 
 disp('Computed chair map');
 
-[max_alpha, transform_Tmg, transform_Tsg, transform_alpha] = voting_scheme(chairMap, chair1_pts_down, chair1_vn_down, scene1_pts_down, ...
-                                       scene1_vn_down, chair_d_dist, chair_d_angle);
+[max_alpha, transform_Tmg, transform_Tsg, transform_alpha, max_tots] = voting_scheme(chairMap, chair1_pts_down, chair1_vn_down, scene1_pts_down, ...
+                                       scene1_vn_down, chair_d_dist, ...
+                                                  chair_d_angle);
 
 % size(transform_Tsg)
 % size(transform_alpha)
 % size(transform_Tmg)
 % transform_Tmg
 
-size(transform_Tmg, 3)
+% size(transform_Tmg, 3)
 
-size(transform_Tsg)
-size(transform_alpha)
-size(transform_Tmg)
+% size(transform_Tsg)
+% size(transform_alpha)
+% size(transform_Tmg)
 
-transform_Tsg
+% transform_Tsg
 
 for ii = 1:size(transform_Tmg, 3)
     transform = invht(transform_Tsg(:,:,ii))*transform_alpha(:,:,ii)*transform_Tmg(:,:,ii);
@@ -80,12 +81,12 @@ for ii = 1:size(transform_Tmg, 3)
                 'EdgeColor', 'green');
         trisurf(scene1_tri,scene1_pts(:,1),scene1_pts(:,2),scene1_pts(:,3), ...
                 'EdgeColor', 'none', 'FaceAlpha', 0.8);
-        trisurf(chair1_tri,chair_new_pts(:,1),chair_new_pts(:,2),chair_new_pts(:,3));
+        h = trisurf(chair1_tri,chair_new_pts(:,1),chair_new_pts(:,2),chair_new_pts(:,3));
         axis equal;
         xlabel('X Axis');
         ylabel('Y Axis');
         zlabel('Z Axis');
         hold off;
-        figure;
+        waitfor(h);
     end
 end
