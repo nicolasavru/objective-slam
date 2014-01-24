@@ -1,27 +1,30 @@
-function [ max_tot, transform1, transform2, transform3 ] = voting_scheme( model_map, model_points, ...
+function [ max_tot, transform1, transform2, transform3, max_tots ] = voting_scheme( model_map, model_points, ...
                                           model_normals, scene_points, ...
-                                          scene_normals, d_dist, d_angle )
+                                          scene_normals, d_dist, ...
+                                                      d_angle)
 %voting scheme
 %   Detailed explanation goes here
 
 n_angle = round(2*pi / d_angle);
+accum_thresh = 0.9;
 
-indeces = 1:size(scene_points,1);
-[p,q] = meshgrid(indeces, indeces);
+indices = 1:size(scene_points,1);
+[p,q] = meshgrid(indices, indices);
 index_pairs = [p(:) q(:)];
 
 Opt.Format = 'hex';
 Opt.Method = 'SHA-1';
 
-accumulator = zeros(size(model_points,1), n_angle, indeces(end));
+accumulator = zeros(size(model_points,1), n_angle, indices(end));
 % transforms = zeros(size(model_points,1), n_angle, 4, 4);
-transforms_Tmg = zeros(size(model_points,1), n_angle, 4, 4, indeces(end));
-transforms_Tsg = zeros(size(model_points,1), n_angle, 4, 4, indeces(end));
-transforms_alpha = zeros(size(model_points,1), n_angle, 4, 4, indeces(end));
+transforms_Tmg = zeros(size(model_points,1), n_angle, 4, 4, indices(end));
+transforms_Tsg = zeros(size(model_points,1), n_angle, 4, 4, indices(end));
+transforms_alpha = zeros(size(model_points,1), n_angle, 4, 4, indices(end));
 
-I_rows = zeros(indeces(end), 1);
-I_cols = zeros(indeces(end), 1);
-max_tots = zeros(indeces(end), 1);
+I_rows = zeros(indices(end), 1);
+I_cols = zeros(indices(end), 1);
+max_tots = zeros(indices(end), 1);
+size(max_tots)
 
 for ii = 1:size(index_pairs,1)
   if mod(ii, 1000) == 0
@@ -45,7 +48,7 @@ for ii = 1:size(index_pairs,1)
 
   if isKey(model_map, key)
     % Model map returns N by 2 array where every row is a set of point pair
-    % indeces within model_map
+    % indices within model_map
     matched_model_points = model_map(key);
 
     for jj = 1:size(matched_model_points,1)
@@ -75,20 +78,32 @@ for ii = 1:size(index_pairs,1)
     [Y_rows, I_row] = max(accumulator(:,:,index_pairs(ii,1)));
     [max_tot, I_col] = max(Y_rows);
 
-    % I_row
-    % I_col
-    % size(I_rows)
-    % size(I_row(I_col))
-
-    I_rows(ii) = I_row(I_col);
-    I_cols(ii) = I_col;
-    max_tots(ii) = max_tot;
+    I_rows(index_pairs(ii,1)) = I_row(I_col);
+    I_cols(index_pairs(ii,1)) = I_col;
+    max_tots(index_pairs(ii,1)) = max_tot;
   end
 end
 
-[max_tot, max_ind] = max(max_tots);
-I_row = I_rows(max_ind)
-I_col = I_cols(max_ind)
+max_tot = max(max_tots);
+max_tots = max_tots ./ max_tot;
+max_ind = find(max_tots > accum_thresh);
+
+ret_rows = I_rows(max_ind);
+ret_cols = I_cols(max_ind);
+
+max_tots
+max_ind
+ret_rows
+ret_cols
+
+% I_row = I_rows(max_ind);
+% I_col = I_cols(max_ind);
+
+% max_tots
+% max_tot
+% max_ind
+% I_row
+% I_col
 
 % size(transforms_Tsg)
 % size(transforms_alpha)
@@ -103,9 +118,25 @@ I_col = I_cols(max_ind)
 % end
 
 % transform = squeeze(transforms(I_row(I_col), I_col, :, :));
-transform1 = squeeze(transforms_Tmg(I_row, I_col, :, :, :));
-transform2 = squeeze(transforms_Tsg(I_row, I_col, :, :, :));
-transform3 = squeeze(transforms_alpha(I_row, I_col, :, :, :));
+
+transform1 = zeros(4,4,length(max_ind));
+transform2 = zeros(4,4,length(max_ind));
+transform3 = zeros(4,4,length(max_ind));
+
+for ii = 1:length(max_ind)
+    ret_row = ret_rows(ii);
+    ret_col = ret_cols(ii);
+    ind = max_ind(ii);
+
+    transform1(:,:,ii) = squeeze(transforms_Tmg(ret_row, ret_col, :, :, ind));
+    transform2(:,:,ii) = squeeze(transforms_Tsg(ret_row, ret_col, :, :, ind));
+    transform3(:,:,ii) = squeeze(transforms_alpha(ret_row, ret_col, :, :, ind));
+
+% transform1 = squeeze(transforms_Tmg(ret_rows, ret_cols, :, :, max_ind));
+% transform2 = squeeze(transforms_Tsg(ret_rows, ret_cols, :, :, max_ind));
+% transform3 = squeeze(transforms_alpha(ret_rows, ret_cols, :, :, max_ind));
+
+end
 
 % size(transform1)
 % size(transform2)

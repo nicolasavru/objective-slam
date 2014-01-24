@@ -13,8 +13,8 @@ d_dist = 0.05 * max_dist; % Might want to return d_dist from function
 n_angle = 60;
 d_angle = 2*pi / n_angle;
 
-indeces = 1:size(model_points,1);
-[p,q] = meshgrid(indeces, indeces);
+indices = 1:size(model_points,1);
+[p,q] = meshgrid(indices, indices);
 index_pairs = [p(:) q(:)];
 
 mapObj = containers.Map('KeyType', 'double', 'ValueType', 'any');
