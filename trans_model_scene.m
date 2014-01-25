@@ -30,7 +30,12 @@ point1 = T_m_g*[m_i 1].';
 point1 = point1(1:3);
 point2 = T_s_g*[s_i 1].';
 point2 = point2(1:3);
-alpha = acos(dot(point1,point2) / (norm(point1)*norm(point2)));
+
+w = [1 0 0]';
+u = point1(1:3);
+v = point2(1:3);
+u_hat = u-w*w'*u;
+v_hat = v-w*w'*v;
+alpha = atan2(w'*cross(u_hat,v_hat),u_hat'*v_hat);
 
 end
-

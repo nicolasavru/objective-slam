@@ -1,4 +1,4 @@
-function [ max_tot, transform1, transform2, transform3, max_tots ] = voting_scheme( model_map, model_points, ...
+function [ max_tot, transform1, transform2, transform3, max_tots, accumulator ] = voting_scheme( model_map, model_points, ...
                                           model_normals, scene_points, ...
                                           scene_normals, d_dist, ...
                                                       d_angle)
@@ -61,8 +61,9 @@ for ii = 1:size(index_pairs,1)
                             
 %       alpha_disc = alpha-mod(alpha,d_angle);
       alpha = real(alpha);
-      alpha_disc = quant(alpha,d_angle)+1;
-      alpha_ind = round(alpha_disc/d_angle);
+      % alpha_disc = quant(alpha+pi,d_angle)+1;
+      alpha_disc = alpha+pi-mod(alpha+pi,d_angle);
+      alpha_ind = min(round(alpha_disc/d_angle)+1, n_angle); % rounding error?
 
       accumulator(matched_model_points(jj,1),alpha_ind, index_pairs(ii,1)) = ...
           accumulator(matched_model_points(jj, 1),alpha_ind, index_pairs(ii,1)) + 1;
