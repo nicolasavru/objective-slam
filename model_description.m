@@ -9,7 +9,7 @@ center = mean([min_coords; max_coords]);
 dists = sqrt(sum(model_points-repmat(center, size(model_points,1), 1).^2, 2));
 max_dist = max(dists);
 
-d_dist = 0.05 * max_dist; % Might want to return d_dist from function
+d_dist = 0.1 * max_dist;
 n_angle = 30;
 d_angle = 2*pi / n_angle;
 

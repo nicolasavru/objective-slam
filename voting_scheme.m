@@ -7,9 +7,11 @@ function [ max_tot, transform1, transform2, transform3, max_tots, accumulator ] 
 
 n_angle = round(2*pi / d_angle);
 accum_thresh = 0.9;
+skip = 5;
 
 indices = 1:size(scene_points,1);
-[p,q] = meshgrid(indices, indices);
+r_indices = 1:skip:size(scene_points,1);
+[p,q] = meshgrid(r_indices, indices);
 index_pairs = [p(:) q(:)];
 
 Opt.Format = 'hex';
