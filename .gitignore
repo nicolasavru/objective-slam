@@ -1,3 +1,5 @@
 *.ply
+*.pcd
 *.swp
 *.swo
+build/
