@@ -68,14 +68,14 @@ main (int argc, char **argv)
   // Estimate normals for object
   pcl::console::print_highlight ("Estimating object normals...\n");
   pcl::NormalEstimationOMP<PointNT,PointNT> nest_obj;
-  nest_obj.setRadiusSearch (0.01);
+  nest_obj.setRadiusSearch (0.02);
   nest_obj.setInputCloud (object);
   nest_obj.compute (*object);
   
   // Estimate normals for scene
   pcl::console::print_highlight ("Estimating scene normals...\n");
   pcl::NormalEstimationOMP<PointNT,PointNT> nest_scene;
-  nest_scene.setRadiusSearch (0.01);
+  nest_scene.setRadiusSearch (0.02);
   nest_scene.setInputCloud (scene);
   nest_scene.compute (*scene);
   
