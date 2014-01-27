@@ -58,24 +58,33 @@ main (int argc, char **argv)
   pcl::VoxelGrid<PointNT> grid;
   float leaf = 0.01f;
   grid.setLeafSize (leaf, leaf, leaf);
+  std::cerr << "object before filtering: " << object->width * object->height
+            << " data points (" << pcl::getFieldsList (*object) << ")." << std::endl;
   grid.setInputCloud (object);
   grid.filter (*object);
-  // leaf = 0.05f;
-  // grid.setLeafSize (leaf, leaf, leaf);
+  std::cerr << "object after filtering: " << object->width * object->height 
+            << " data points (" << pcl::getFieldsList (*object) << ")." << std::endl;
+  leaf = 0.01f;
+  grid.setLeafSize (leaf, leaf, leaf);
+  std::cerr << "scene before filtering: " << scene->width * scene->height
+            << " data points (" << pcl::getFieldsList (*scene) << ")." << std::endl;
   grid.setInputCloud (scene);
   grid.filter (*scene);
+  std::cerr << "scene after filtering: " << scene->width * scene->height 
+            << " data points (" << pcl::getFieldsList (*scene) << ")." << std::endl;
+
 
   // Estimate normals for object
   pcl::console::print_highlight ("Estimating object normals...\n");
   pcl::NormalEstimationOMP<PointNT,PointNT> nest_obj;
-  nest_obj.setRadiusSearch (0.02);
+  nest_obj.setRadiusSearch (0.1);
   nest_obj.setInputCloud (object);
   nest_obj.compute (*object);
   
   // Estimate normals for scene
   pcl::console::print_highlight ("Estimating scene normals...\n");
   pcl::NormalEstimationOMP<PointNT,PointNT> nest_scene;
-  nest_scene.setRadiusSearch (0.02);
+  nest_scene.setRadiusSearch (0.1);
   nest_scene.setInputCloud (scene);
   nest_scene.compute (*scene);
   
