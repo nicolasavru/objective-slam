@@ -16,6 +16,8 @@
 #include <pcl/segmentation/sac_segmentation.h>
 #include <pcl/visualization/pcl_visualizer.h>
 
+#include "alignment.h"
+
 // Types
 typedef pcl::PointNormal PointNT;
 typedef pcl::PointCloud<PointNT> PointCloudT;
@@ -36,7 +38,13 @@ main (int argc, char **argv)
   PointCloudT::Ptr scene (new PointCloudT);
   FeatureCloudT::Ptr object_features (new FeatureCloudT);
   FeatureCloudT::Ptr scene_features (new FeatureCloudT);
-  
+
+  // cuda compilation experimentation
+  if(argc == 2){
+      hist_main();
+      return 1;
+  }
+
   // Get input object and scene
   if (argc != 3)
   {
