@@ -11,12 +11,13 @@
 #include <pcl/io/pcd_io.h>
 #include <pcl/io/ply_io.h>
 #include <pcl/registration/icp.h>
-#include <pcl/registration/ppf_registration.h>
+// #include <pcl/registration/ppf_registration.h>
 #include <pcl/registration/sample_consensus_prerejective.h>
 #include <pcl/segmentation/sac_segmentation.h>
 #include <pcl/visualization/pcl_visualizer.h>
 
 #include "alignment.h"
+#include "my_ppf_registration.h"
 
 // Types
 typedef pcl::PointNormal PointNT;
@@ -41,8 +42,9 @@ main (int argc, char **argv)
 
   // cuda compilation experimentation
   if(argc == 2){
-      hist_main();
-      return 1;
+      int N = 1000;
+      ply_load_main("/tmp/points.txt", "/tmp/norms.txt", 1000);
+      return 2;
   }
 
   // Get input object and scene
