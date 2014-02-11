@@ -42,8 +42,8 @@ main (int argc, char **argv)
 
   // cuda compilation experimentation
   if(argc == 2){
-      int N = 1000;
-      ply_load_main("/tmp/points.txt", "/tmp/norms.txt", 1000);
+      int N = atoi(argv[1]);
+      ply_load_main("/tmp/points.txt", "/tmp/norms.txt", N);
       return 2;
   }
 
