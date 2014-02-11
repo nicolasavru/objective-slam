@@ -51,26 +51,16 @@ __global__ void ppf_wrapper(float3 *points, float3 *norms, float4 *out, int coun
             // if(j == idx) continue;
             out[ind*count + j] = compute_ppf(thisPoint, points[j], thisNorm, norms[j]);
         }
-
-        // for(int i = 0; i < count; i+= BLOCK_SIZE){
-        //     Spoints[ind] = points[i+ind];
-        //     __syncthreads();
-
-        //     for(int j = 0; j < BLOCK_SIZE; j++) {
-        //         if(i+j == idx) continue;
-
-        //         out[ind*BLOCK_SIZE + j] = compute_ppf(thisPoint, Spoints[j], thisNorm, Snorms[j]);
-        //     }
-        // }
     }
 }
 
 
-float input(int fd)    // basic input structure
-{
-    float x;
-    read(fd, &x, sizeof(float));
-    return x;
+void input(int fd, float3 *point){
+    float p[3];
+    read(fd, p, 3*sizeof(float));
+    point->x = p[0];
+    point->y = p[1];
+    point->z = p[2];
 }
 
 int ply_load_main(char *point_path, char *norm_path, int N){
@@ -82,22 +72,18 @@ int ply_load_main(char *point_path, char *norm_path, int N){
 
     // read in data and time
     long startTime = clock();
-    for(int i = 0; i < N; i++)    // loop over rows
-    {    
-        points[i].x = input(points_fin);    // read in an input entry
-        points[i].y = input(points_fin);
-        points[i].z = input(points_fin);
-
-        norms[i].x = input(norms_fin);    // read in an input entry
-        norms[i].y = input(norms_fin);
-        norms[i].z = input(norms_fin);
-
+    for(int i = 0; i < N; i++){
+        input(points_fin, points+i);
+        input(norms_fin, norms+i);
     }
     long finishTime = clock();
 
     cudaDeviceProp  prop;
     HANDLE_ERROR(cudaGetDeviceProperties(&prop, 0));
     int blocks = prop.multiProcessorCount;
+    /* DEBUG */
+    fprintf(stderr, "blocks: %d\n", blocks);
+    /* DEBUG */
 
     cudaEvent_t start, stop;
     HANDLE_ERROR(cudaEventCreate(&start));
@@ -109,17 +95,19 @@ int ply_load_main(char *point_path, char *norm_path, int N){
     float4 *ppfs = new float4[N*N];
     float4 *d_ppfs; // GPU version
 
+    int page_size = min(N, 4096);
     HANDLE_ERROR(cudaMalloc(&d_points, N*sizeof(float3)));
-    HANDLE_ERROR(cudaMemcpy(d_points, points, N*sizeof(float3), cudaMemcpyHostToDevice));
-
     HANDLE_ERROR(cudaMalloc(&d_norms, N*sizeof(float3)));
+    HANDLE_ERROR(cudaMalloc(&d_ppfs, page_size*page_size*sizeof(float4)));
+
+    HANDLE_ERROR(cudaMemcpy(d_points, points, N*sizeof(float3), cudaMemcpyHostToDevice));
     HANDLE_ERROR(cudaMemcpy(d_norms, norms, N*sizeof(float3), cudaMemcpyHostToDevice));
 
-    HANDLE_ERROR(cudaMalloc(&d_ppfs, N*N*sizeof(float4)));
-
-    // call ppf kernel
-    ppf_wrapper<<<1,1024>>>(d_points, d_norms, d_ppfs, N);
-    HANDLE_ERROR(cudaMemcpy(ppfs, d_ppfs, N*N*sizeof(float4), cudaMemcpyDeviceToHost));
+    for(int offset = 0; offset < N; offset+=page_size){
+        // call ppf kernel
+        ppf_wrapper<<<1,1024>>>(d_points+offset, d_norms+offset, d_ppfs, page_size);
+        HANDLE_ERROR(cudaMemcpy(ppfs+offset, d_ppfs, page_size*page_size*sizeof(float4), cudaMemcpyDeviceToHost));
+    }
 
     // end timer
     HANDLE_ERROR(cudaEventRecord(stop, 0));
