@@ -1,5 +1,5 @@
-#ifndef SEARCH_STRUCTURE_H
-#define SEARCH_STRUCTURE_H
+#ifndef __SEARCH_STRUCTURE_H
+#define __SEARCH_STRUCTURE_H
 
 #include <cuda.h>
 #include <cuda_runtime.h>                // Stops underlining of __global__
@@ -13,11 +13,11 @@ class SearchStructure {
 
     public:
 
-        SearchStructure(float4 *d_ppfs, int n, int block_size);
+        SearchStructure(float4 *d_ppfs, int n);
 
         ~SearchStructure();
 
-        __device__ int ppf_lookup(float4 *ppf, float4 *results);
+        thrust::device_vector<unsigned int> *ppf_lookup(thrust::device_vector<float4> *d_ppfs);
 
     private:
 
@@ -45,4 +45,4 @@ class SearchStructure {
 };
 
 
-#endif /* SEARCH_STRUCTURE_H */
+#endif /* __SEARCH_STRUCTURE_H */

@@ -7,82 +7,13 @@
 #include <device_launch_parameters.h>    // Stops underlining of threadIdx etc.
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <math_constants.h>
-#include <functional>
 #include <thrust/device_vector.h>
 
+#include "kernel.h"
 #include "book.h"
 #include "SearchStructure.h"
 
-#define BLOCK_SIZE 256
-
-__const__ int n_angle = 32;
-__const__ float d_angle = 2*CUDART_PI_F/n_angle;
-__const__ float d_dist = 0.05;
-
 using namespace std;
-
-__device__ __forceinline__ float dot(float3 v1, float3 v2){
-    return (v1.x*v2.x + v1.y*v2.y + v1.z*v2.z);
-}
-
-__device__ __forceinline__ float norm(float3 v){
-    return sqrtf(dot(v, v));
-}
-
-
-__device__ float4 disc_feature(float4 f, float d_dist, float d_angle){
-    f.x = f.x - fmodf(f.x, d_dist);
-    f.y = f.y - fmodf(f.y, d_angle);
-    f.z = f.z - fmodf(f.z, d_angle);
-    f.w = f.w - fmodf(f.w, d_angle);
-    return f;
-}
-
-__device__ float4 compute_ppf(float3 p1, float3 n1, float3 p2, float3 n2){
-    float3 d;
-    d.x = p2.x - p1.x;
-    d.y = p2.y - p1.y;
-    d.z = p2.z - p1.z;
-
-    float4 f;
-    f.x = norm(d);
-    f.y = acosf(dot(n1,d) / (norm(n1)*norm(d)));
-    f.z = acosf(dot(n2,d) / (norm(n2)*norm(d)));
-    f.w = acosf(dot(n1,n2) / (norm(n1)*norm(n2)));
-
-    return f;
-}
-
-__global__ void ppf_kernel(float3 *points, float3 *norms, float4 *out, int count){
-    if(count <= 1) return;
-
-    int ind = threadIdx.x;
-    int idx = ind + blockIdx.x * blockDim.x;
-
-    if(idx < count) {
-
-        __shared__ float3 Spoints[BLOCK_SIZE];
-        __shared__ float3 Snorms[BLOCK_SIZE];
-
-        float3 thisPoint = points[idx];
-        float3 thisNorm  = norms[idx];
-
-        for(int i = 0; i < count/BLOCK_SIZE; i++){
-
-            Spoints[ind] = points[i*BLOCK_SIZE+ind];
-            Snorms[ind]  = norms[i*BLOCK_SIZE+ind];
-            __syncthreads();
-
-            for(int j = 0; j < BLOCK_SIZE; j++) {
-                if((idx*count + j + i*BLOCK_SIZE) % (count+1) == 0) continue;
-                out[idx*count + j + i*BLOCK_SIZE] = compute_ppf(thisPoint, thisNorm, Spoints[j], Snorms[j]);
-                out[idx*count + j + i*BLOCK_SIZE] = disc_feature(out[idx*count + j + i*BLOCK_SIZE],
-                                                                 d_dist, d_angle);
-            }
-        }
-    }
-}
 
 /*#include <thrust/sort.h>*/
 /*#include <thrust/device_ptr.h>*/
@@ -199,7 +130,7 @@ int ply_load_main(char *point_path, char *norm_path, int N){
 
 
     // build model description
-    SearchStructure *model = new SearchStructure(d_ppfs, N*N, BLOCK_SIZE);
+    SearchStructure *model = new SearchStructure(d_ppfs, N*N);
 
     // end cuda timer
     HANDLE_ERROR(cudaEventRecord(stop, 0));
