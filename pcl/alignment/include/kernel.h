@@ -21,6 +21,12 @@ __global__ void ppf_decode_kernel(unsigned long *codes, unsigned int *key2ppfMap
 
 __global__ void ppf_hash_kernel(float4 *ppfs, unsigned int *codes, int count);
 
+__global__ void ppf_lookup_kernel(unsigned int *sceneKeys, unsigned int *sceneIndices,
+                                  unsigned int *hashKeys, unsigned int *ppfCount,
+                                  unsigned int *firstPPFIndex, unsigned int *key2ppfMap,
+                                  unsigned int *found_ppf_start, unsigned int *found_ppf_count,
+                                  int count);
+
 __global__ void ppf_vote_kernel(float4 *ppfs, unsigned long *codes, int count);
 
 

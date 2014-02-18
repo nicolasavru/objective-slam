@@ -74,5 +74,39 @@ __global__ void ppf_hash_kernel(float4 *ppfs, unsigned int *codes, int count){
 }
 
 // TODO: increase thread work
+__global__ void ppf_lookup_kernel(unsigned int *sceneKeys, unsigned int *sceneIndices,
+                                  unsigned int *hashKeys, unsigned int *ppfCount,
+                                  unsigned int *firstPPFIndex, unsigned int *key2ppfMap,
+                                  unsigned int *found_ppf_start, unsigned int *found_ppf_count,
+                                  int count){
+    if(count <= 1) return;
+
+    int ind = threadIdx.x;
+    int idx = ind + blockIdx.x * blockDim.x;
+
+    if(idx < count){
+        unsigned int thisSceneKey = sceneKeys[idx];
+        unsigned int thisSceneIndex = sceneIndices[idx];
+        if (thisSceneKey != hashKeys[thisSceneIndex]){
+            return;
+        }
+        unsigned int thisPPFCount = ppfCount[thisSceneIndex];
+        unsigned int thisFirstPPFIndex = firstPPFIndex[thisSceneIndex];
+
+
+    }
+}
+
+// TODO: increase thread work
 __global__ void ppf_vote_kernel(float4 *ppfs, unsigned long *codes, int count){
+    if(count <= 1) return;
+
+    int ind = threadIdx.x;
+    int idx = ind + blockIdx.x * blockDim.x;
+
+    if(idx < count){
+
+        codes[idx] = hash(ppfs+idx, sizeof(float4));
+    }
+
 }

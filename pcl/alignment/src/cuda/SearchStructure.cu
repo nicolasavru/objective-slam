@@ -76,15 +76,23 @@ SearchStructure::~SearchStructure(){
 thrust::device_vector<unsigned int> *SearchStructure::ppf_lookup(thrust::device_vector<float4> *d_ppfs){
 
     thrust::device_vector<unsigned int> *sceneKeys = new thrust::device_vector<unsigned int>(d_ppfs->size());
-    thrust::device_vector<unsigned int> *sceneIndeces = new thrust::device_vector<unsigned int>(d_ppfs->size());
 
     ppf_hash_kernel<<<n/BLOCK_SIZE,BLOCK_SIZE>>>(RAW_PTR(d_ppfs), RAW_PTR(sceneKeys), d_ppfs->size());
 
+    thrust::device_vector<unsigned int> *sceneIndeces = new thrust::device_vector<unsigned int>(d_ppfs->size());
     thrust::lower_bound(this->hashKeys->begin(),
                         this->hashKeys->end(),
                         sceneKeys->begin(),
                         sceneKeys->end(),
                         sceneIndeces->begin());
+
+    thrust::device_vector<unsigned int> *found_ppf_starts = new thrust::device_vector<unsigned int>(d_ppfs->size());
+    thrust::device_vector<unsigned int> *found_ppf_count = new thrust::device_vector<unsigned int>(d_ppfs->size());
+    ppf_lookup_kernel<<<n/BLOCK_SIZE,BLOCK_SIZE>>>(RAW_PTR(sceneKeys), RAW_PTR(sceneIndeces),
+                                                   RAW_PTR(this->hashKeys), RAW_PTR(this->ppfCount),
+                                                   RAW_PTR(this->firstPPFIndex), RAW_PTR(this->key2ppfMap),
+                                                   RAW_PTR(found_ppf_starts), RAW_PTR(found_ppf_count),
+                                                   d_ppfs->size());
 
     return sceneIndeces;
 }
