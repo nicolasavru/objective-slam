@@ -2,7 +2,7 @@
 
 clear all; close all; clc;
 
-[chair1_tri,chair1_pts] = ply_read('ply/chair1.ply','tri');
+[chair1_tri,chair1_pts] = ply_read('../ply/chair1.ply','tri');
 chair1_pts = chair1_pts.';
 chair1_tri = chair1_tri.';
 % trisurf(chair1_tri,chair1_pts(:,1),chair1_pts(:,2),chair1_pts(:,3), ...
@@ -18,7 +18,7 @@ disp('Chair Model Loaded and Normals Computed');
 model_N = 2500;
 scene_N = 1000;
 
-[scene1_tri,scene1_pts] = ply_read('ply/scene1_trimmed2.ply','tri');
+[scene1_tri,scene1_pts] = ply_read('../ply/scene1_trimmed2.ply','tri');
 scene1_pts = roty(1)*rotz(2)*[scene1_pts; ones(1, size(scene1_pts,2))];
 scene1_pts = scene1_pts(1:3,:).';
 scene1_tri = scene1_tri.';
@@ -83,6 +83,7 @@ for ii = 1:size(transform_Tmg, 3)
         trisurf(scene1_tri,scene1_pts(:,1),scene1_pts(:,2),scene1_pts(:,3), ...
                 'EdgeColor', 'none', 'FaceAlpha', 0.8);
         h = trisurf(chair1_tri,chair_new_pts(:,1),chair_new_pts(:,2),chair_new_pts(:,3));
+        cameratoolbar;
         axis equal;
         xlabel('X Axis');
         ylabel('Y Axis');

@@ -11,13 +11,13 @@
 #include <pcl/io/pcd_io.h>
 #include <pcl/io/ply_io.h>
 #include <pcl/registration/icp.h>
-// #include <pcl/registration/ppf_registration.h>
+#include <pcl/registration/ppf_registration.h>
 #include <pcl/registration/sample_consensus_prerejective.h>
 #include <pcl/segmentation/sac_segmentation.h>
 #include <pcl/visualization/pcl_visualizer.h>
 
 #include "alignment.h"
-#include "my_ppf_registration.h"
+//#include "my_ppf_registration.h"
 
 // Types
 typedef pcl::PointNormal PointNT;
