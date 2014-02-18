@@ -18,15 +18,10 @@
 #define __BOOK_H__
 #include <stdio.h>
 
-static void HandleError( cudaError_t err,
-                         const char *file,
-                         int line ) {
-    if (err != cudaSuccess) {
-        printf( "%s in %s at line %d\n", cudaGetErrorString( err ),
-                file, line );
-        exit( EXIT_FAILURE );
-    }
-}
+void HandleError( cudaError_t err,
+                  const char *file,
+                  int line );
+
 #define HANDLE_ERROR( err ) (HandleError( err, __FILE__, __LINE__ ))
 
 
@@ -36,95 +31,21 @@ static void HandleError( cudaError_t err,
                             exit( EXIT_FAILURE );}}
 
 template< typename T >
-void swap( T& a, T& b ) {
-    T t = a;
-    a = b;
-    b = t;
-}
+void swap( T& a, T& b );
 
+void* big_random_block( int size );
 
-void* big_random_block( int size ) {
-    unsigned char *data = (unsigned char*)malloc( size );
-    HANDLE_NULL( data );
-    for (int i=0; i<size; i++)
-        data[i] = rand();
-
-    return data;
-}
-
-int* big_random_block_int( int size ) {
-    int *data = (int*)malloc( size * sizeof(int) );
-    HANDLE_NULL( data );
-    for (int i=0; i<size; i++)
-        data[i] = rand();
-
-    return data;
-}
-
+int* big_random_block_int( int size );
 
 // a place for common kernels - starts here
 
-__device__ unsigned char value( float n1, float n2, int hue ) {
-    if (hue > 360)      hue -= 360;
-    else if (hue < 0)   hue += 360;
-
-    if (hue < 60)
-        return (unsigned char)(255 * (n1 + (n2-n1)*hue/60));
-    if (hue < 180)
-        return (unsigned char)(255 * n2);
-    if (hue < 240)
-        return (unsigned char)(255 * (n1 + (n2-n1)*(240-hue)/60));
-    return (unsigned char)(255 * n1);
-}
+__device__ unsigned char value( float n1, float n2, int hue );
 
 __global__ void float_to_color( unsigned char *optr,
-                              const float *outSrc ) {
-    // map from threadIdx/BlockIdx to pixel position
-    int x = threadIdx.x + blockIdx.x * blockDim.x;
-    int y = threadIdx.y + blockIdx.y * blockDim.y;
-    int offset = x + y * blockDim.x * gridDim.x;
-
-    float l = outSrc[offset];
-    float s = 1;
-    int h = (180 + (int)(360.0f * outSrc[offset])) % 360;
-    float m1, m2;
-
-    if (l <= 0.5f)
-        m2 = l * (1 + s);
-    else
-        m2 = l + s - l * s;
-    m1 = 2 * l - m2;
-
-    optr[offset*4 + 0] = value( m1, m2, h+120 );
-    optr[offset*4 + 1] = value( m1, m2, h );
-    optr[offset*4 + 2] = value( m1, m2, h -120 );
-    optr[offset*4 + 3] = 255;
-}
+                              const float *outSrc );
 
 __global__ void float_to_color( uchar4 *optr,
-                              const float *outSrc ) {
-    // map from threadIdx/BlockIdx to pixel position
-    int x = threadIdx.x + blockIdx.x * blockDim.x;
-    int y = threadIdx.y + blockIdx.y * blockDim.y;
-    int offset = x + y * blockDim.x * gridDim.x;
-
-    float l = outSrc[offset];
-    float s = 1;
-    int h = (180 + (int)(360.0f * outSrc[offset])) % 360;
-    float m1, m2;
-
-    if (l <= 0.5f)
-        m2 = l * (1 + s);
-    else
-        m2 = l + s - l * s;
-    m1 = 2 * l - m2;
-
-    optr[offset].x = value( m1, m2, h+120 );
-    optr[offset].y = value( m1, m2, h );
-    optr[offset].z = value( m1, m2, h -120 );
-    optr[offset].w = 255;
-}
-
+                              const float *outSrc );
 
 #if _WIN32
     //Windows threads.
@@ -158,60 +79,5 @@ void destroy_thread( CUTThread thread );
 
 //Wait for multiple threads.
 void wait_for_threads( const CUTThread *threads, int num );
-
-#if _WIN32
-    //Create thread
-    CUTThread start_thread(CUT_THREADROUTINE func, void *data){
-        return CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)func, data, 0, NULL);
-    }
-
-    //Wait for thread to finish
-    void end_thread(CUTThread thread){
-        WaitForSingleObject(thread, INFINITE);
-        CloseHandle(thread);
-    }
-
-    //Destroy thread
-    void destroy_thread( CUTThread thread ){
-        TerminateThread(thread, 0);
-        CloseHandle(thread);
-    }
-
-    //Wait for multiple threads
-    void wait_for_threads(const CUTThread * threads, int num){
-        WaitForMultipleObjects(num, threads, true, INFINITE);
-
-        for(int i = 0; i < num; i++)
-            CloseHandle(threads[i]);
-    }
-
-#else
-    //Create thread
-    CUTThread start_thread(CUT_THREADROUTINE func, void * data){
-        pthread_t thread;
-        pthread_create(&thread, NULL, func, data);
-        return thread;
-    }
-
-    //Wait for thread to finish
-    void end_thread(CUTThread thread){
-        pthread_join(thread, NULL);
-    }
-
-    //Destroy thread
-    void destroy_thread( CUTThread thread ){
-        pthread_cancel(thread);
-    }
-
-    //Wait for multiple threads
-    void wait_for_threads(const CUTThread * threads, int num){
-        for(int i = 0; i < num; i++)
-            end_thread( threads[i] );
-    }
-
-#endif
-
-
-
 
 #endif  // __BOOK_H__

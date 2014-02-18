@@ -11,8 +11,8 @@ find_package(PCL 1.7 REQUIRED)
 # https://devtalk.nvidia.com/default/topic/487573/cuda-programming-and-performance/linker-error-usr-bin-ld-cannot-find-lcudart/post/3497498/#3497498
 find_package(CUDA)
 
-FILE(GLOB srcs src/*.cpp src/*.h*)
-FILE(GLOB cuda src/cuda/*.cu src/cuda/*.h*)
+FILE(GLOB srcs src/*.cpp)
+FILE(GLOB cuda src/cuda/*.cu)
 
 source_group("Source Files\\cuda" FILES ${cuda})
 source_group("Source Files" FILES ${srcs} )
