@@ -53,7 +53,7 @@ main (int argc, char **argv)
     pcl::console::print_error ("Syntax is: %s object.ply scene.ply\n", argv[0]);
     return (1);
   }
-  
+
   // Load object and scene
   pcl::console::print_highlight ("Loading point clouds...\n");
   if (pcl::io::loadPLYFile<PointNT> (argv[1], *object) < 0 ||
@@ -62,7 +62,7 @@ main (int argc, char **argv)
     pcl::console::print_error ("Error loading object/scene file!\n");
     return (1);
   }
-  
+
   // Downsample
   pcl::console::print_highlight ("Downsampling...\n");
   pcl::VoxelGrid<PointNT> grid;
@@ -80,7 +80,7 @@ main (int argc, char **argv)
             << " data points (" << pcl::getFieldsList (*scene) << ")." << std::endl;
   grid.setInputCloud (scene);
   grid.filter (*scene);
-  std::cerr << "scene after filtering: " << scene->width * scene->height 
+  std::cerr << "scene after filtering: " << scene->width * scene->height
             << " data points (" << pcl::getFieldsList (*scene) << ")." << std::endl;
 
 
@@ -90,14 +90,14 @@ main (int argc, char **argv)
   nest_obj.setRadiusSearch (0.1);
   nest_obj.setInputCloud (object);
   nest_obj.compute (*object);
-  
+
   // Estimate normals for scene
   pcl::console::print_highlight ("Estimating scene normals...\n");
   pcl::NormalEstimationOMP<PointNT,PointNT> nest_scene;
   nest_scene.setRadiusSearch (0.1);
   nest_scene.setInputCloud (scene);
   nest_scene.compute (*scene);
-  
+
   // // Estimate features
   // pcl::console::print_highlight ("Estimating features...\n");
   // FeatureEstimationT fest;
@@ -165,7 +165,7 @@ main (int argc, char **argv)
     pcl::console::print_info ("t = < %0.3f, %0.3f, %0.3f >\n", transformation (0,3), transformation (1,3), transformation (2,3));
     pcl::console::print_info ("\n");
     // pcl::console::print_info ("Inliers: %i/%i\n", align.getInliers ().size (), object->size ());
-    
+
     // Show alignment
     pcl::visualization::PCLVisualizer visu("Alignment");
     visu.addPointCloud (scene, ColorHandlerT (scene, 0.0, 255.0, 0.0), "scene");
@@ -177,6 +177,6 @@ main (int argc, char **argv)
     pcl::console::print_error ("Alignment failed!\n");
     return (1);
   }
-  
+
   return (0);
 }

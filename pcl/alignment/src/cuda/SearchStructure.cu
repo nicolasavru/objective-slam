@@ -6,10 +6,12 @@
 #include <thrust/inner_product.h>
 #include <thrust/iterator/constant_iterator.h>
 #include <thrust/scan.h>
+#include <thrust/device_vector.h>
 
 #include "book.h"
 #include "SearchStructure.h"
 
+#define RAW_PTR(V) thrust::raw_pointer_cast(V->data())
 
 // FNV-1a hash function
 // http://programmers.stackexchange.com/questions/49550/which-hashing-algorithm-is-best-for-uniqueness-and-speed
@@ -58,29 +60,26 @@ SearchStructure::SearchStructure(float4 *d_ppfs, int n, int block_size){
 
     // for each ppf, compute a 32-bit hash and concatenate it with
     // a 32-bit int representing the index of the ppf in d_ppfs
-    unsigned long *d_codes;
-    HANDLE_ERROR(cudaMalloc(&d_codes, n*sizeof(unsigned long)));
-    thrust::device_ptr<unsigned long> dev_ptr(d_codes);
+    thrust::device_vector<unsigned long> *d_codes = new thrust::device_vector<unsigned long>(n);
 
-    ppf_encode_kernel<<<n/block_size,block_size>>>(d_ppfs, d_codes, n);
-    thrust::sort(dev_ptr, dev_ptr+n);
+    ppf_encode_kernel<<<n/block_size,block_size>>>(d_ppfs, RAW_PTR(d_codes), n);
+    thrust::sort(d_codes->begin(), d_codes->end());
 
     // split codes into array of hashKeys (high 32 bits) and
     // key2ppfMap, the associated indices (low 32 bits)
-    unsigned int *hashKeys_old;
-    HANDLE_ERROR(cudaMalloc(&(this->key2ppfMap), n*sizeof(unsigned int)));
-    HANDLE_ERROR(cudaMalloc(&hashKeys_old, n*sizeof(unsigned int)));
-    thrust::device_ptr<unsigned int> hashKeys_old_ptr(hashKeys_old);
-    thrust::device_ptr<unsigned int> key2ppfMap_ptr(this->key2ppfMap);
+    this->key2ppfMap = new thrust::device_vector<unsigned int>(n);
+    thrust::device_vector<unsigned int> *hashKeys_old = new thrust::device_vector<unsigned int>(n);
 
-    ppf_decode_kernel<<<n/block_size,block_size>>>(d_codes, this->key2ppfMap, hashKeys_old, n);
-    cudaFree(d_codes);
-
+    ppf_decode_kernel<<<n/block_size,block_size>>>(RAW_PTR(d_codes),
+                                                   RAW_PTR(this->key2ppfMap),
+                                                   RAW_PTR(hashKeys_old),
+                                                   n);
+    delete d_codes;
 
     // create histogram of hash keys
     // https://code.google.com/p/thrust/source/browse/examples/histogram.cu
-    unsigned int num_bins = thrust::inner_product(hashKeys_old_ptr, hashKeys_old_ptr + n - 1,
-                                                  hashKeys_old_ptr + 1,
+    unsigned int num_bins = thrust::inner_product(hashKeys_old->begin(), hashKeys_old->end() - 1,
+                                                  hashKeys_old->begin() + 1,
                                                   (unsigned int) 1,
                                                   thrust::plus<unsigned int>(),
                                                   thrust::not_equal_to<unsigned int>());
@@ -89,39 +88,37 @@ SearchStructure::SearchStructure(float4 *d_ppfs, int n, int block_size){
     fprintf(stderr, "num_bins: %d\n", num_bins);
     /* DEBUG */
 
-    HANDLE_ERROR(cudaMalloc(&(this->hashKeys), num_bins*sizeof(unsigned int)));
-    HANDLE_ERROR(cudaMalloc(&(this->ppfCount), num_bins*sizeof(unsigned int)));
-    thrust::device_ptr<unsigned int> hashKeys_ptr(this->hashKeys);
-    thrust::device_ptr<unsigned int> ppfCount_ptr(this->ppfCount);
+    //HANDLE_ERROR(cudaMalloc(&(this->hashKeys), num_bins*sizeof(unsigned int)));
+    //HANDLE_ERROR(cudaMalloc(&(this->ppfCount), num_bins*sizeof(unsigned int)));
+    this->ppfCount = new thrust::device_vector<unsigned int>(num_bins);
+    this->hashKeys = new thrust::device_vector<unsigned int>(num_bins);
 
-    thrust::reduce_by_key(hashKeys_old_ptr, hashKeys_old_ptr + n,
+    thrust::reduce_by_key(hashKeys_old->begin(), hashKeys_old->end(),
                           thrust::constant_iterator<unsigned int>(1),
-                          hashKeys_ptr,
-                          ppfCount_ptr);
-    cudaFree(hashKeys_old);
-
+                          this->hashKeys->begin(),
+                          this->ppfCount->begin());
+    delete hashKeys_old;
 
     // create list of beginning indices of blocks of ppfs having equal hashes
-    HANDLE_ERROR(cudaMalloc(&(this->firstPPFIndex), num_bins*sizeof(unsigned int)));
-    thrust::device_ptr<unsigned int> firstPPFIndex_ptr(this->firstPPFIndex);
+    this->firstPPFIndex = new thrust::device_vector<unsigned int>(num_bins);
 
-    thrust::exclusive_scan(ppfCount_ptr, ppfCount_ptr+num_bins, firstPPFIndex_ptr);
+    thrust::exclusive_scan(this->ppfCount->begin(), this->ppfCount->end(), this->firstPPFIndex->begin());
 }
 
 SearchStructure::~SearchStructure(){
-    cudaFree(this->hashKeys);
-    cudaFree(this->ppfCount);
-    cudaFree(this->firstPPFIndex);
-    cudaFree(this->key2ppfMap);
+    delete this->hashKeys;
+    delete this->ppfCount;
+    delete this->firstPPFIndex;
+    delete this->key2ppfMap;
 }
 
 // TODO: finish
 //
 // TODO: redo using thrust vectorized search
-// __device__ int SearchStructure::ppf_lookup(float4 *ppf, float4 *results){
-//     int hashKey = hash(ppf, sizeof(float4));
-//     int hash_idx;
-//     // Iterator iter = thrust::lower_bound(thrust::device, s.hashKeys, s.hashKeys + n, hashKey);
+__device__ int SearchStructure::ppf_lookup(float4 *ppf, float4 *results){
+    int hashKey = hash(ppf, sizeof(float4));
+    int hash_idx;
+    /*Iterator iter = thrust::lower_bound(thrust::device, s.hashKeys, s.hashKeys + n, hashKey);*/
 
-//     return 0;
-// }
+    return 0;
+}
