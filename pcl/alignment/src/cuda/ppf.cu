@@ -7,15 +7,11 @@
 #include <device_launch_parameters.h>    // Stops underlining of threadIdx etc.
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <thrust/sort.h>
-#include <thrust/device_ptr.h>
-#include <thrust/inner_product.h>
-#include <thrust/iterator/constant_iterator.h>
-#include <thrust/scan.h>
 #include <math_constants.h>
 #include <functional>
 
 #include "book.h"
+#include "SearchStructure.h"
 
 #define BLOCK_SIZE 256
 
@@ -33,17 +29,6 @@ __device__ __forceinline__ float norm(float3 v){
     return sqrtf(dot(v, v));
 }
 
-// FNV-1a hash function
-// http://programmers.stackexchange.com/questions/49550/which-hashing-algorithm-is-best-for-uniqueness-and-speed
-__device__ unsigned int hash(void *f, int n){
-    char *s = (char *) f;
-    unsigned int hash = 2166136261;
-    while(n--){
-        hash ^= *s++;
-        hash *= 16777619;
-    }
-    return hash;
-}
 
 __device__ float4 disc_feature(float4 f, float d_dist, float d_angle){
     f.x = f.x - fmodf(f.x, d_dist);
@@ -96,142 +81,6 @@ __global__ void ppf_kernel(float3 *points, float3 *norms, float4 *out, int count
             }
         }
     }
-}
-
-// TODO: increase thread work
-__global__ void ppf_encode_kernel(float4 *ppfs, unsigned long *codes, int count){
-    if(count <= 1) return;
-
-    int ind = threadIdx.x;
-    int idx = ind + blockIdx.x * blockDim.x;
-
-    if(idx < count){
-        unsigned int hk = hash(ppfs+idx, sizeof(float4));
-        codes[idx] = (((unsigned long) hk) << 32) + idx;
-    }
-}
-
-// TODO: increase thread work
-__global__ void ppf_decode_kernel(unsigned long *codes, unsigned int *key2ppfMap,
-                                  unsigned int *hashKeys, int count){
-    if(count <= 1) return;
-
-    int ind = threadIdx.x;
-    int idx = ind + blockIdx.x * blockDim.x;
-
-    unsigned long low32 = ((unsigned long) -1) >> 32;
-
-    if(idx < count){
-        // line 11 in algorithm 1, typo on their part?!?
-        key2ppfMap[idx] = (unsigned int) (codes[idx] & low32);
-        hashKeys[idx] = (unsigned int) (codes[idx] >> 32);
-    }
-}
-
-// TODO: Re-write as a class. Have the constructor take n as an
-// argument and cudaMalloc() everything. Have the destructor
-// cudaFree() everything. Have ppf_lookup be a method. Replace
-// (unsigned int *)s with thrust::device_vectors and modify everything
-// else accordingly.
-//
-// structure for searching a model description
-struct search_structure{
-    // Number of PPF in the mode. I.e., number of elements in each of
-    // the following arrays;
-    int n;
-
-    // List of all hash keys. Use a parallel binary search to find
-    // index of desired hash key.
-    unsigned int *hashKeys;
-
-    // ppfCount[i] is the number of PPFs whose hash is hashKeys[i];
-    unsigned int *ppfCount;
-
-    // firstPPFIndex[i] is the index of the first entry in key2ppfMap
-    // corresponding to hashKey[i]. The following ppfCount[i]-1
-    // entries also correspond to hashKey[i].
-    unsigned int *firstPPFIndex;
-
-    // key2ppfMap[i] is the index in d_ppfs that contains (one of) the
-    // PPF(s) whose hash is hashKeys[i]. From there, the indices of
-    // the points that were used to generate the PPF can be
-    // calculated.
-    unsigned int *key2ppfMap;
-};
-
-// TODO: finish
-//
-// TODO: redo using thrust vectorized search
-// __device__ int ppf_lookup(struct search_structure s, float4 *ppf, float4 *results){
-//     int hashKey = hash(ppf, sizeof(float4));
-//     int hash_idx;
-//     // Iterator iter = thrust::lower_bound(thrust::device, s.hashKeys, s.hashKeys + n, hashKey);
-
-//     return 0;
-// }
-
-struct search_structure build_model_description(float4 *d_ppfs, int n){
-    // for each ppf, compute a 32-bit hash and concatenate it with
-    // a 32-bit int representing the index of the ppf in d_ppfs
-    unsigned long *d_codes;
-    HANDLE_ERROR(cudaMalloc(&d_codes, n*sizeof(unsigned long)));
-    thrust::device_ptr<unsigned long> dev_ptr(d_codes); 
-
-    ppf_encode_kernel<<<n/BLOCK_SIZE,BLOCK_SIZE>>>(d_ppfs, d_codes, n);
-    thrust::sort(dev_ptr, dev_ptr+n);
-
-
-    // split codes into array of hashKeys (high 32 bits) and
-    // key2ppfMap, the associated indices (low 32 bits)
-    unsigned int *key2ppfMap, *hashKeys;
-    HANDLE_ERROR(cudaMalloc(&key2ppfMap, n*sizeof(unsigned int)));
-    HANDLE_ERROR(cudaMalloc(&hashKeys, n*sizeof(unsigned int)));
-    thrust::device_ptr<unsigned int> hashKeys_ptr(hashKeys);
-    thrust::device_ptr<unsigned int> key2ppfMap_ptr(key2ppfMap);
-
-    ppf_decode_kernel<<<n/BLOCK_SIZE,BLOCK_SIZE>>>(d_codes, key2ppfMap, hashKeys, n);
-    cudaFree(d_codes);
-
-
-    // create histogram of hash keys
-    // https://code.google.com/p/thrust/source/browse/examples/histogram.cu
-    unsigned int num_bins = thrust::inner_product(hashKeys_ptr, hashKeys_ptr + n - 1,
-                                                  hashKeys_ptr + 1,
-                                                  (unsigned int) 1,
-                                                  thrust::plus<unsigned int>(),
-                                                  thrust::not_equal_to<unsigned int>());
-
-    /* DEBUG */
-    fprintf(stderr, "num_bins: %d\n", num_bins);
-    /* DEBUG */
-
-    unsigned int *hashKeys_new, *ppfCount;
-    HANDLE_ERROR(cudaMalloc(&hashKeys_new, num_bins*sizeof(unsigned int)));
-    HANDLE_ERROR(cudaMalloc(&ppfCount, num_bins*sizeof(unsigned int)));
-    thrust::device_ptr<unsigned int> hashKeys_new_ptr(hashKeys_new);
-    thrust::device_ptr<unsigned int> ppfCount_ptr(ppfCount);
-
-    thrust::reduce_by_key(hashKeys_ptr, hashKeys_ptr + n,
-                          thrust::constant_iterator<unsigned int>(1),
-                          hashKeys_new_ptr,
-                          ppfCount_ptr);
-    cudaFree(hashKeys);
-
-
-    // create list of beginning indices of blocks of ppfs having equal hashes
-    unsigned int *firstPPFIndex;
-    HANDLE_ERROR(cudaMalloc(&firstPPFIndex, num_bins*sizeof(unsigned int)));
-    thrust::device_ptr<unsigned int> firstPPFIndex_ptr(firstPPFIndex);
-
-    thrust::exclusive_scan(ppfCount_ptr, ppfCount_ptr+num_bins, firstPPFIndex_ptr);
-
-    struct search_structure result;
-    result.n = n;
-    result.hashKeys = hashKeys_new;
-    result.ppfCount = ppfCount;
-    result.firstPPFIndex = firstPPFIndex;
-    result.key2ppfMap = key2ppfMap;
-    return result;
 }
 
 int ply_load_main(char *point_path, char *norm_path, int N){
@@ -288,9 +137,7 @@ int ply_load_main(char *point_path, char *norm_path, int N){
 
 
     // build model description
-    struct search_structure model;
-    model = build_model_description(d_ppfs, N*N);
-
+    SearchStructure *model = new SearchStructure(d_ppfs, N*N, BLOCK_SIZE);
 
     // end cuda timer
     HANDLE_ERROR(cudaEventRecord(stop, 0));
@@ -324,10 +171,7 @@ int ply_load_main(char *point_path, char *norm_path, int N){
     cudaFree(d_norms);
     cudaFree(d_ppfs);
 
-    cudaFree(model.hashKeys);
-    cudaFree(model.key2ppfMap);
-    cudaFree(model.ppfCount);
-    cudaFree(model.firstPPFIndex);
+    delete model;
 
     cudaDeviceReset();
 
