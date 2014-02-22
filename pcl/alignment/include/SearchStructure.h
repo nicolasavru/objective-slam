@@ -20,8 +20,9 @@ class SearchStructure {
 
         ~SearchStructure();
 
-        thrust::device_vector<unsigned int> *ppf_lookup(thrust::device_vector<float4> *scene_ppfs);
+        thrust::device_vector<unsigned int> *ppf_lookup(SearchStructure *scene);
 
+        int numPoints();
         thrust::device_vector<float3> *getModelPoints();
         thrust::device_vector<float3> *getModelNormals();
         thrust::device_vector<float4> *getModelPPFs();

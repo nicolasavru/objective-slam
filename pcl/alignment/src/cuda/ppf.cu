@@ -39,7 +39,7 @@ void test_histogram(char *point_path, int N){
     thrust::sort(d_points->begin(), d_points->end());
 
     // create histogram of hash keys
-    https://code.google.com/p/thrust/source/browse/examples/histogram.cu
+    // https://code.google.com/p/thrust/source/browse/examples/histogram.cu
     unsigned int num_bins = thrust::inner_product(d_points->begin(), d_points->end() - 1,
                                                   d_points->begin() + 1,
                                                   (unsigned int) 1,
