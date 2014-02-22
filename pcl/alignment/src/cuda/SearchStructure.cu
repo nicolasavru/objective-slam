@@ -46,9 +46,9 @@ SearchStructure::SearchStructure(thrust::host_vector<float3> *points, thrust::ho
     thrust::device_vector<unsigned long> *d_codes =
         new thrust::device_vector<unsigned long>(this->modelPPFs->size());
 
-    ppf_encode_kernel<<<n/BLOCK_SIZE,BLOCK_SIZE>>>(RAW_PTR(this->modelPPFs),
-                                                   RAW_PTR(d_codes),
-                                                   this->modelPPFs->size());
+    ppf_encode_kernel<<<this->modelPPFs->size()/BLOCK_SIZE,BLOCK_SIZE>>>(RAW_PTR(this->modelPPFs),
+                                                                         RAW_PTR(d_codes),
+                                                                         this->modelPPFs->size());
     thrust::sort(d_codes->begin(), d_codes->end());
 
     // split codes into array of hashKeys (high 32 bits) and
@@ -57,10 +57,10 @@ SearchStructure::SearchStructure(thrust::host_vector<float3> *points, thrust::ho
     thrust::device_vector<unsigned int> *hashKeys_old =
         new thrust::device_vector<unsigned int>(this->modelPPFs->size());
 
-    ppf_decode_kernel<<<n/BLOCK_SIZE,BLOCK_SIZE>>>(RAW_PTR(d_codes),
-                                                   RAW_PTR(this->key2ppfMap),
-                                                   RAW_PTR(hashKeys_old),
-                                                   this->modelPPFs->size());
+    ppf_decode_kernel<<<this->modelPPFs->size()/BLOCK_SIZE,BLOCK_SIZE>>>(RAW_PTR(d_codes),
+                                                                          RAW_PTR(this->key2ppfMap),
+                                                                          RAW_PTR(hashKeys_old),
+                                                                          this->modelPPFs->size());
     delete d_codes;
 
     // create histogram of hash keys
@@ -75,10 +75,8 @@ SearchStructure::SearchStructure(thrust::host_vector<float3> *points, thrust::ho
     fprintf(stderr, "num_bins: %d\n", num_bins);
     /* DEBUG */
 
-    HANDLE_ERROR(cudaMalloc(&(this->hashKeys), num_bins*sizeof(unsigned int)));
-    HANDLE_ERROR(cudaMalloc(&(this->ppfCount), num_bins*sizeof(unsigned int)));
-    this->ppfCount = new thrust::device_vector<unsigned int>(num_bins);
     this->hashKeys = new thrust::device_vector<unsigned int>(num_bins);
+    this->ppfCount = new thrust::device_vector<unsigned int>(num_bins);
 
     thrust::reduce_by_key(hashKeys_old->begin(), hashKeys_old->end(),
                           thrust::constant_iterator<unsigned int>(1),

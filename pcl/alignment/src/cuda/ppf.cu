@@ -16,66 +16,60 @@
 
 using namespace std;
 
-/*#include <thrust/sort.h>*/
-/*#include <thrust/device_ptr.h>*/
-/*#include <thrust/inner_product.h>*/
-/*#include <thrust/iterator/constant_iterator.h>*/
-/*#include <thrust/scan.h>*/
+#include <thrust/sort.h>
+#include <thrust/device_ptr.h>
+#include <thrust/inner_product.h>
+#include <thrust/iterator/constant_iterator.h>
+#include <thrust/scan.h>
 
-/*void test_histogram(char *point_path, int N){*/
+void test_histogram(char *point_path, int N){
+    FILE *points_fin;
+    size_t result1;
 
-    /*// file input*/
-    /*FILE *points_fin;*/
-    /*size_t result1;*/
+    points_fin = fopen(point_path, "rb");
+    if(points_fin==NULL){fputs ("File error: point_fin",stderr); exit (1);}
 
-    /*points_fin = fopen(point_path, "rb");*/
-    /*if(points_fin==NULL){fputs ("File error: point_fin",stderr); exit (1);}*/
+    thrust::host_vector<unsigned int> *points = new thrust::host_vector<unsigned int>(N);
 
-    /*unsigned int *points = new unsigned int[N];*/
-    /*unsigned int *d_points;*/
-    /*HANDLE_ERROR(cudaMalloc(&d_points, N*sizeof(unsigned int)));*/
-    /*if (points == NULL) {fputs ("Memory error: points",stderr); exit (2);}*/
+    if (points == NULL) {fputs ("Memory error: points",stderr); exit (2);}
 
-    /*result1 = fread(points,sizeof(unsigned int),N,points_fin);*/
+    result1 = fread(RAW_PTR(points),sizeof(unsigned int),N,points_fin);
+    thrust::device_vector<unsigned int> *d_points = new thrust::device_vector<unsigned int>(*points);
 
-    /*thrust::device_ptr<unsigned int> hashKeys_old_ptr(d_points);*/
-    /*HANDLE_ERROR(cudaMemcpy(d_points, points, N*sizeof(unsigned int), cudaMemcpyHostToDevice));*/
+    thrust::sort(d_points->begin(), d_points->end());
 
-    /*thrust::sort(hashKeys_old_ptr, hashKeys_old_ptr+N);*/
+    // create histogram of hash keys
+    https://code.google.com/p/thrust/source/browse/examples/histogram.cu
+    unsigned int num_bins = thrust::inner_product(d_points->begin(), d_points->end() - 1,
+                                                  d_points->begin() + 1,
+                                                  (unsigned int) 1,
+                                                  thrust::plus<unsigned int>(),
+                                                  thrust::not_equal_to<unsigned int>());
 
-    /*// create histogram of hash keys*/
-    /*// https://code.google.com/p/thrust/source/browse/examples/histogram.cu*/
-    /*unsigned int num_bins = thrust::inner_product(hashKeys_old_ptr, hashKeys_old_ptr + N - 1,*/
-                                                  /*hashKeys_old_ptr + 1,*/
-                                                  /*(unsigned int) 1,*/
-                                                  /*thrust::plus<unsigned int>(),*/
-                                                  /*thrust::not_equal_to<unsigned int>());*/
+    /* DEBUG */
+    fprintf(stderr, "num_bins: %d\n", num_bins);
+    /* DEBUG */
 
-    /*[> DEBUG <]*/
-    /*fprintf(stderr, "num_bins: %d\n", num_bins);*/
-    /*[> DEBUG <]*/
+    thrust::device_vector<unsigned int> *hashKeys = new thrust::device_vector<unsigned int>(num_bins);
+    thrust::device_vector<unsigned int> *ppfCount = new thrust::device_vector<unsigned int>(num_bins);
 
-    /*unsigned int *hashKeys, *ppfCount;*/
-    /*HANDLE_ERROR(cudaMalloc(&hashKeys, num_bins*sizeof(unsigned int)));*/
-    /*HANDLE_ERROR(cudaMalloc(&ppfCount, num_bins*sizeof(unsigned int)));*/
-    /*thrust::device_ptr<unsigned int> hashKeys_ptr(hashKeys);*/
-    /*thrust::device_ptr<unsigned int> ppfCount_ptr(ppfCount);*/
+    thrust::reduce_by_key(d_points->begin(), d_points->end(),
+                          thrust::constant_iterator<unsigned int>(1),
+                          hashKeys->begin(),
+                          ppfCount->begin());
 
-    /*thrust::reduce_by_key(hashKeys_old_ptr, hashKeys_old_ptr + N,*/
-                          /*thrust::constant_iterator<unsigned int>(1),*/
-                          /*hashKeys_ptr,*/
-                          /*ppfCount_ptr);*/
 
-    /*unsigned int A[num_bins], B[num_bins];*/
-    /*[>HANDLE_ERROR(cudaMemcpy(A, hashKeys, num_bins*sizeof(unsigned int), cudaMemcpyDeviceToHost));<]*/
-    /*HANDLE_ERROR(cudaMemcpy(B, ppfCount, num_bins*sizeof(unsigned int), cudaMemcpyDeviceToHost));*/
+    thrust::host_vector<unsigned int> *A = new thrust::host_vector<unsigned int>(*ppfCount);
 
-    /*for (int i=0; i<num_bins; i++){*/
-        /*fprintf(stderr, "%u: %u %u\n", i, B[i], A[i]);*/
-    /*}*/
-/*}*/
+    for (int i=0; i<num_bins; i++){
+        fprintf(stderr, "%u: %u %u\n", i, (*A)[i]);
+    }
+}
 
 int ply_load_main(char *point_path, char *norm_path, int N){
+    // test_histogram("/tmp/hist_test.bin", 10000);
+    // return 0;
+
     // file input
     FILE *points_fin, *norms_fin;
     size_t result1, result2;

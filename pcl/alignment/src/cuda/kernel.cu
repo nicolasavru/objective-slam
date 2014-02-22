@@ -99,7 +99,7 @@ __global__ void ppf_decode_kernel(unsigned long *codes, unsigned int *key2ppfMap
     unsigned long low32 = ((unsigned long) -1) >> 32;
 
     if(idx < count){
-        // line 11 in algorithm 1, typo on their part?!?
+        // line 11 in algorithm 1, typo on their part
         key2ppfMap[idx] = (unsigned int) (codes[idx] & low32);
         hashKeys[idx] = (unsigned int) (codes[idx] >> 32);
     }
