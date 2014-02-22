@@ -8,6 +8,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <thrust/device_vector.h>
+#include <thrust/host_vector.h>
 
 #include "kernel.h"
 #include "book.h"
@@ -84,85 +85,49 @@ int ply_load_main(char *point_path, char *norm_path, int N){
     if(points_fin==NULL){fputs ("File error: point_fin",stderr); exit (1);}
     if(norms_fin==NULL){fputs ("File error: norms_fin",stderr); exit (1);}
 
-    float3 *points = new float3[N];
-    float3 *norms = new float3[N];
+    thrust::host_vector<float3> *points = new thrust::host_vector<float3>(N);
+    thrust::host_vector<float3> *norms = new thrust::host_vector<float3>(N);
+
     if (points == NULL) {fputs ("Memory error: points",stderr); exit (2);}
     if (norms  == NULL) {fputs ("Memory error: norms",stderr); exit (2);}
 
     long startTime0 = clock();
-    result1 = fread(points,sizeof(float3),N,points_fin);
-    result2 = fread(norms,sizeof(float3),N,norms_fin);
+    result1 = fread(RAW_PTR(points),sizeof(float3),N,points_fin);
+    result2 = fread(RAW_PTR(norms),sizeof(float3),N,norms_fin);
     long finishTime0 = clock();
 
-    if(result1 != N){fputs ("Reading error: points",stderr); exit (3);}
-    if(result2 != N){fputs ("Reading error: norms",stderr); exit (3);}
+    cout<<"Data Load Time"<<" "<<(finishTime0 - startTime0)<<" ms"<<endl;
 
-    /*thrust::device_vector<float3> pts(points, points + N*sizeof(float3));*/
-
+    if(result1 != N){fputs ("Reading error: points",stderr); exit(3);}
+    if(result2 != N){fputs ("Reading error: norms",stderr); exit(3);}
 
     // cuda setup
-    cudaDeviceProp  prop;
+    cudaDeviceProp prop;
     HANDLE_ERROR(cudaGetDeviceProperties(&prop, 0));
     int blocks = prop.multiProcessorCount;
     /* DEBUG */
     fprintf(stderr, "blocks: %d\n", blocks);
     /* DEBUG */
 
-
-    // start cuda timer
-    cudaEvent_t start, stop;
-    HANDLE_ERROR(cudaEventCreate(&start));
-    HANDLE_ERROR(cudaEventCreate(&stop));
-    HANDLE_ERROR(cudaEventRecord(start, 0));
-
-
-    // compute ppfs
-    float3 *d_points, *d_norms;
-    float4 *d_ppfs;
-    HANDLE_ERROR(cudaMalloc(&d_points, N*sizeof(float3)));
-    HANDLE_ERROR(cudaMalloc(&d_norms, N*sizeof(float3)));
-    HANDLE_ERROR(cudaMalloc(&d_ppfs, N*N*sizeof(float4)));
-
-    HANDLE_ERROR(cudaMemcpy(d_points, points, N*sizeof(float3), cudaMemcpyHostToDevice));
-    HANDLE_ERROR(cudaMemcpy(d_norms, norms, N*sizeof(float3), cudaMemcpyHostToDevice));
-
-    ppf_kernel<<<N/BLOCK_SIZE,BLOCK_SIZE>>>(d_points, d_norms, d_ppfs, N);
-
-
     // build model description
-    SearchStructure *model = new SearchStructure(d_ppfs, N*N);
-
-    // end cuda timer
-    HANDLE_ERROR(cudaEventRecord(stop, 0));
-    HANDLE_ERROR(cudaEventSynchronize(stop));
-    float elapsedTime;
-    HANDLE_ERROR(cudaEventElapsedTime(&elapsedTime, start, stop));
-    printf("Time to generate:  %3.1f ms\n", elapsedTime);
-
+    SearchStructure *model = new SearchStructure(points, norms, N);
 
     // copy ppfs back to host
-    float4 *ppfs = new float4[N*N];
-    HANDLE_ERROR(cudaMemcpy(ppfs, d_ppfs, N*N*sizeof(float4), cudaMemcpyDeviceToHost));
+    thrust::host_vector<float4> *ppfs = new thrust::host_vector<float4>(*model->getModelPPFs());
 
     // write out ppfs
     for(int i = 0; i < 100; i++){
         cout << "PPF Number: " << i << endl;
-        cout << ppfs[i].x << endl;
-        cout << ppfs[i].y << endl;
-        cout << ppfs[i].z << endl;
-        cout << ppfs[i].w << endl;
+        cout << (*ppfs)[i].x << endl;
+        cout << (*ppfs)[i].y << endl;
+        cout << (*ppfs)[i].z << endl;
+        cout << (*ppfs)[i].w << endl;
     }
 
-    cout<<"Data Load Time"<<" "<<(finishTime0 - startTime0)<<" ms"<<endl;
-
     // Deallocate ram
-    delete[] points;
-    delete[] norms;
-    delete[] ppfs;
-
-    cudaFree(d_points);
-    cudaFree(d_norms);
-    cudaFree(d_ppfs);
+    delete points;
+    delete norms;
+    delete ppfs;
 
     delete model;
 

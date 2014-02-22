@@ -60,7 +60,7 @@ for ii = 1:size(index_pairs,1)
                               model_normals(matched_model_points(jj,1),:), ...
                               model_points(matched_model_points(jj,2),:), ...
                               s_r, n_r_s, s_i);
-                            
+
 %       alpha_disc = alpha-mod(alpha,d_angle);
       alpha = real(alpha);
       % alpha_disc = quant(alpha+pi,d_angle)+1;

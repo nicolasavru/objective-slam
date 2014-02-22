@@ -5,6 +5,9 @@
 #include <cuda_runtime.h>                // Stops underlining of __global__
 #include <device_launch_parameters.h>    // Stops underlining of threadIdx etc.
 #include <thrust/device_vector.h>
+#include <thrust/host_vector.h>
+
+#define RAW_PTR(V) thrust::raw_pointer_cast(V->data())
 
 // TODO: Have ppf_lookup be a method. Replace
 // (unsigned int *)s with thrust::device_vectors and modify everything
@@ -13,17 +16,30 @@ class SearchStructure {
 
     public:
 
-        SearchStructure(float4 *d_ppfs, int n);
+        SearchStructure(thrust::host_vector<float3>*points, thrust::host_vector<float3> *normals, int n);
 
         ~SearchStructure();
 
-        thrust::device_vector<unsigned int> *ppf_lookup(thrust::device_vector<float4> *d_ppfs);
+        thrust::device_vector<unsigned int> *ppf_lookup(thrust::device_vector<float4> *scene_ppfs);
+
+        thrust::device_vector<float3> *getModelPoints();
+        thrust::device_vector<float3> *getModelNormals();
+        thrust::device_vector<float4> *getModelPPFs();
 
     private:
 
         // Number of PPF in the mode. I.e., number of elements in each of
         // the following arrays;
         int n;
+
+        // List of model points
+        thrust::device_vector<float3> *modelPoints;
+
+        // List of model normals
+        thrust::device_vector<float3> *modelNormals;
+
+        // List of model point pair features
+        thrust::device_vector<float4> *modelPPFs;
 
         // List of all hash keys. Use a parallel binary search to find
         // index of desired hash key.

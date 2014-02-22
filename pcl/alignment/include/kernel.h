@@ -12,6 +12,13 @@ __const__ int n_angle = 32;
 __const__ float d_angle = 2*CUDART_PI_F/n_angle;
 __const__ float d_dist = 0.05;
 
+__device__ unsigned int hash(void *f, int n);
+__device__ __forceinline__ float dot(float3 v1, float3 v2);
+__device__ __forceinline__ float norm(float3 v);
+__device__ float4 disc_feature(float4 f, float d_dist, float d_angle);
+__device__ float4 compute_ppf(float3 p1, float3 n1, float3 p2, float3 n2);
+
+
 __global__ void ppf_kernel(float3 *points, float3 *norms, float4 *out, int count);
 
 __global__ void ppf_encode_kernel(float4 *ppfs, unsigned long *codes, int count);
