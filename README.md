@@ -1,12 +1,14 @@
 objective-slam
 ==============
 
-
-## Refences ##
-P. D. Kovesi.   MATLAB and Octave Functions for Computer Vision and Image Processing.
-Centre for Exploration Targeting
-School of Earth and Environment
-The University of Western Australia.
-Available from:
-<http://www.csse.uwa.edu.au/~pk/research/matlabfns/>.
+This project presents a system that captures and stores an accurate
+3-dimensional map of an arbitrary environment. Building on KinFu, an
+open source implementation of KinectFusion, a GPU- accelerated
+volumetric surface reconstruction algorithm, within PCL and SLAM++, an
+algorithm for localization and camera tracking, this project seeks to
+automate the recognition process. Model matches and orientations are
+computed via an algorithm that matches points and surface normals of
+the scene with those of a database model. This process is ideally
+suited to a parallel implementation, potentially allowing real-time
+object recognition.
 
