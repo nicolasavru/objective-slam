@@ -334,6 +334,36 @@ __global__ void ppf_lookup_kernel(unsigned int *sceneKeys, unsigned int *sceneIn
     }
 }
 
+// during trans_model_scene() (while computing translation vector
+// between scene ref point and model pt:
+// 1) descritize translation vector (probably small multiple of voxel distance)
+// 2) encode disc'd translation vector into int:
+//    [trans vec|idx]
+//    where idx is an index into the global array of votes (slam++ fig 4)
+// 3) sort array of translation vec codes
+// 4) reduce_by_key translation vec code array to get mapping from
+// unique translation vecs to list of code indices (identical to lines 13-16
+// slam++ algorithm 1)
+// 5) for each unique translation vector:
+//       create histogram by accumulating all associated votes
+//       (probably identical to slam++ algorithm 2)
+// 5a) (maybe) smooth adjacent translation vector histograms
+// 6) for each unique translation vector histogram:
+//      find max angle
+//      score according to max angle + neighbors
+// 7) compare score to threshold
+// 8) get list of votes associated with uniqe trans vec and max angle + neighbors
+// 9) At this point, we have a list of clusters of (scene point, model point, angle)
+//    tuples.
+//    for each tuple:
+//      call trans_model_scene:
+//        a) compute rotation angles for each scene point model point pair
+//        b) average computed angles and alphas from each tuple
+//        c) compute T_m_g, T_s_g, and rotx(alpha) from averaged angles and alphas
+//           and the unique translation vector corresponding to this cluster
+// return drost eqn. 2 as final solution(s)
+//
+
 // TODO: increase thread work
 __global__ void ppf_vote_kernel(float4 *ppfs, unsigned long *codes, int count){
     if(count <= 1) return;
