@@ -12,7 +12,7 @@
 
 #include "kernel.h"
 #include "book.h"
-#include "SearchStructure.h"
+#include "model.h"
 
 using namespace std;
 
@@ -104,7 +104,7 @@ int ply_load_main(char *point_path, char *norm_path, int N){
     /* DEBUG */
 
     // build model description
-    SearchStructure *model = new SearchStructure(points, norms, N);
+    Model *model = new Model(points, norms, N);
 
     // copy ppfs back to host
     thrust::host_vector<float4> *ppfs = new thrust::host_vector<float4>(*model->getModelPPFs());

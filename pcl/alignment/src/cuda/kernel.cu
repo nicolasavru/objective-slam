@@ -1,4 +1,8 @@
 #include <string.h>
+#include <cuda.h>
+#include <cuda_runtime.h>                // Stops underlining of __global__
+#include <device_launch_parameters.h>    // Stops underlining of threadIdx etc.
+
 #include "kernel.h"
 
 // FNV-1a hash function
@@ -42,6 +46,13 @@ __device__ float4 disc_feature(float4 f, float d_dist, float d_angle){
     f.y = quant_downf(f.y, d_angle);
     f.z = quant_downf(f.z, d_angle);
     f.w = quant_downf(f.w, d_angle);
+    return f;
+}
+
+__device__ float3 discretize(float3 f, float d_dist){
+    f.x = quant_downf(f.x, d_dist);
+    f.y = quant_downf(f.y, d_dist);
+    f.z = quant_downf(f.z, d_dist);
     return f;
 }
 
@@ -163,8 +174,62 @@ __device__ float4 minus(float4 u, float4 v){
     return w;
 }
 
-
 __device__ void trans_model_scene(float3 m_r, float3 n_r_m, float3 m_i,
+                                  float3 s_r, float3 n_r_s, float3 s_i,
+                                  float d_dist, float3 &trans_vec,
+                                  unsigned int &alpha){
+    float transm[4][4], rot_y[4][4], rot_z[4][4], T_tmp[4][4], T_m_g[4][4], T_s_g[4][4];
+    float4 n_tmp;
+
+    m_r = discretize(m_r, d_dist);
+    m_r = times(-1, m_r);
+    trans_vec = m_r;
+
+    trans(m_r, transm);
+
+    roty(atan2f(n_r_m.z, n_r_m.x), rot_y);
+
+    n_tmp = homogenize(n_r_m);
+
+    mat4f_vmul(rot_y, n_tmp);
+
+    rotz(-1*atan2f(n_tmp.y, n_tmp.x), rot_z);
+
+    mat4f_mul(rot_z, rot_y, T_tmp);
+    mat4f_mul(T_tmp, transm, T_m_g);
+
+
+    s_r = times(-1, s_r);
+    trans(s_r, transm);
+
+    roty(atan2f(n_r_s.z, n_r_s.x), rot_y);
+
+    n_tmp = homogenize(n_r_s);
+
+    mat4f_vmul(rot_y, n_tmp);
+
+    rotz(-1*atan2f(n_tmp.y, n_tmp.x), rot_z);
+
+    mat4f_mul(rot_z, rot_y, T_tmp);
+    mat4f_mul(T_tmp, transm, T_s_g);
+
+
+    n_tmp = homogenize(m_i);
+    n_tmp = mat4f_vmul(T_m_g, n_tmp);
+    float3 u = dehomogenize(n_tmp);
+
+    n_tmp = homogenize(s_i);
+    n_tmp = mat4f_vmul(T_s_g, n_tmp);
+    float3 v = dehomogenize(n_tmp);
+
+    u.x = 0;
+    v.x = 0;
+
+    float alpha_tmp = atan2f(cross(u, v).x, dot(u, v));
+    alpha = (int) roundf((alpha_tmp / (2*CUDART_PI_F) ) * (n_angle - 1));
+}
+
+__device__ void trans_model_scene_matlab(float3 m_r, float3 n_r_m, float3 m_i,
                                   float3 s_r, float3 n_r_s, float3 s_i,
                                   float T_m_g[4][4], float T_s_g[4][4], float &alpha){
     float transm[4][4], rot_y[4][4], rot_z[4][4], T_tmp[4][4];
@@ -286,53 +351,7 @@ __global__ void ppf_hash_kernel(float4 *ppfs, unsigned int *codes, int count){
     }
 }
 
-// TODO: increase thread work
-__global__ void ppf_lookup_kernel(unsigned int *sceneKeys, unsigned int *sceneIndices,
-                                  unsigned int *hashKeys, unsigned int *ppfCount,
-                                  unsigned int *firstPPFIndex, unsigned int *key2ppfMap,
-                                  float3 *modelPoints, float3 *modelNormals, int modelSize,
-                                  float3 *scenePoints, float3 *sceneNormals, int sceneSize,
-                                  unsigned int *votes,
-                                  int count){
-    if(count <= 1) return;
 
-    int ind = threadIdx.x;
-    int idx = ind + blockIdx.x * blockDim.x;
-
-    if(idx < count){
-        unsigned int thisSceneKey = sceneKeys[idx];
-        unsigned int thisSceneIndex = sceneIndices[idx];
-        float3 thisScenePoint = scenePoints[idx];
-        float3 thisSceneNormal = sceneNormals[idx];
-        if (thisSceneKey != hashKeys[thisSceneIndex]){
-            return;
-        }
-        unsigned int thisPPFCount = ppfCount[thisSceneIndex];
-        unsigned int thisFirstPPFIndex = firstPPFIndex[thisSceneIndex];
-
-        unsigned int modelPPFIndex, model_r_index, model_i_index;
-        float3 model_r_point, model_r_norm, model_i_point, scene_i_point;
-        for(int i = 0; i < thisPPFCount; i++){
-            modelPPFIndex = key2ppfMap[thisFirstPPFIndex+i];
-            model_r_index = modelPPFIndex / modelSize;
-            model_i_index = modelPPFIndex % modelSize;
-
-            model_r_point = modelPoints[model_r_index];
-            model_r_norm = modelNormals[model_r_index];
-            model_i_point = modelPoints[model_i_index];
-
-            // for(int j = 0; j < sceneSize; j++){
-            //     scene_i_point = scenePoints[j];
-            //     trans_model_scene(model_r_point, model_r_normal, model_i_point,
-            //                       thisScenePoint, thisSceneNormal, scene_i_point);
-
-            // }
-
-        }
-
-
-    }
-}
 
 // during trans_model_scene() (while computing translation vector
 // between scene ref point and model pt:
@@ -365,15 +384,50 @@ __global__ void ppf_lookup_kernel(unsigned int *sceneKeys, unsigned int *sceneIn
 //
 
 // TODO: increase thread work
-__global__ void ppf_vote_kernel(float4 *ppfs, unsigned long *codes, int count){
+__global__ void ppf_vote_kernel(unsigned int *sceneKeys, unsigned int *sceneIndices,
+                                unsigned int *hashKeys, unsigned int *ppfCount,
+                                unsigned int *firstPPFIndex, unsigned int *key2ppfMap,
+                                float3 *modelPoints, float3 *modelNormals, int modelSize,
+                                float3 *scenePoints, float3 *sceneNormals, int sceneSize,
+                                unsigned int *votes, int count){
     if(count <= 1) return;
 
     int ind = threadIdx.x;
     int idx = ind + blockIdx.x * blockDim.x;
+    unsigned int alpha;
+    float3 trans_vec;
 
     if(idx < count){
+        unsigned int thisSceneKey = sceneKeys[idx];
+        unsigned int thisSceneIndex = sceneIndices[idx];
+        float3 thisScenePoint = scenePoints[idx];
+        float3 thisSceneNormal = sceneNormals[idx];
+        if (thisSceneKey != hashKeys[thisSceneIndex]){
+            return;
+        }
+        unsigned int thisPPFCount = ppfCount[thisSceneIndex];
+        unsigned int thisFirstPPFIndex = firstPPFIndex[thisSceneIndex];
 
-        codes[idx] = hash(ppfs+idx, sizeof(float4));
+        unsigned int modelPPFIndex, model_r_index, model_i_index;
+        float3 model_r_point, model_r_norm, model_i_point, scene_i_point;
+        for(int i = 0; i < thisPPFCount; i++){
+            modelPPFIndex = key2ppfMap[thisFirstPPFIndex+i];
+            model_r_index = modelPPFIndex / modelSize;
+            model_i_index = modelPPFIndex % modelSize;
+
+            model_r_point = modelPoints[model_r_index];
+            model_r_norm = modelNormals[model_r_index];
+            model_i_point = modelPoints[model_i_index];
+
+             for(int j = 0; j < sceneSize; j++){
+                 scene_i_point = scenePoints[j];
+                 trans_model_scene(model_r_point, model_r_norm, model_i_point,
+                                   thisScenePoint, thisSceneNormal, scene_i_point,
+                                   d_dist, trans_vec, alpha);
+                 votes[idx + j] = (((unsigned long)idx) << 32) | (model_r_index << 6) | (alpha);
+             }
+
+        }
+
     }
-
 }
