@@ -11,7 +11,24 @@
 #include "kernel.h"
 #include "book.h"
 
+Scene::Scene(){}
+
 Scene::Scene(thrust::host_vector<float3> *points, thrust::host_vector<float3> *normals, int n){
+    this->initPPFs(points, normals, n);
+    this->hashKeys = new thrust::device_vector<unsigned int>(this->modelPPFs->size());
+    ppf_hash_kernel<<<n/BLOCK_SIZE,BLOCK_SIZE>>>(RAW_PTR(this->modelPPFs),
+                                                 RAW_PTR(this->hashKeys),
+                                                 this->modelPPFs->size());
+}
+
+Scene::~Scene(){
+    delete this->modelPoints;
+    delete this->modelNormals;
+    delete this->modelPPFs;
+    delete this->hashKeys;
+}
+
+void Scene::initPPFs(thrust::host_vector<float3> *points, thrust::host_vector<float3> *normals, int n){
     this->n = n;
     this->modelPoints = new thrust::device_vector<float3>(*points);
     this->modelNormals = new thrust::device_vector<float3>(*normals);
@@ -42,12 +59,6 @@ Scene::Scene(thrust::host_vector<float3> *points, thrust::host_vector<float3> *n
     #endif
 }
 
-Scene::~Scene(){
-    delete this->modelPoints;
-    delete this->modelNormals;
-    delete this->modelPPFs;
-}
-
 int Scene::numPoints(){
     return this->n;
 }
@@ -61,4 +72,8 @@ thrust::device_vector<float3> *Scene::getModelNormals(){
 }
 thrust::device_vector<float4> *Scene::getModelPPFs(){
     return this->modelPPFs;
+}
+
+thrust::device_vector<unsigned int>* Scene::getHashKeys(){
+    return this->hashKeys;
 }

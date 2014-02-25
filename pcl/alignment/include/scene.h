@@ -15,6 +15,7 @@ class Scene {
 
     public:
 
+        Scene();
         Scene(thrust::host_vector<float3>*points, thrust::host_vector<float3> *normals, int n);
 
         ~Scene();
@@ -23,6 +24,7 @@ class Scene {
         thrust::device_vector<float3> *getModelPoints();
         thrust::device_vector<float3> *getModelNormals();
         thrust::device_vector<float4> *getModelPPFs();
+        thrust::device_vector<unsigned int> *getHashKeys();
 
     protected:
 
@@ -38,6 +40,13 @@ class Scene {
 
         // Vector of model point pair features
         thrust::device_vector<float4> *modelPPFs;
+
+        // For a scene, hashKeys stores the hashes of all point pair features.
+        // For a model, hashKeys is an array of all UNIQUE hashKeys. A binary search
+        //   should be used to find the index of desired hash key.
+        thrust::device_vector<unsigned int> *hashKeys;
+
+        void initPPFs(thrust::host_vector<float3> *points, thrust::host_vector<float3> *normals, int n);
 };
 
 

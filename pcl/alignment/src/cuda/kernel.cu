@@ -356,7 +356,7 @@ __global__ void ppf_hash_kernel(float4 *ppfs, unsigned int *codes, int count){
 // during trans_model_scene() (while computing translation vector
 // between scene ref point and model pt:
 // 1) descritize translation vector (probably small multiple of voxel distance)
-// 2) encode disc'd translation vector into int:
+// 2) encode disc'd translation vector into long:
 //    [trans vec|idx]
 //    where idx is an index into the global array of votes (slam++ fig 4)
 // 3) sort array of translation vec codes
@@ -389,7 +389,7 @@ __global__ void ppf_vote_kernel(unsigned int *sceneKeys, unsigned int *sceneIndi
                                 unsigned int *firstPPFIndex, unsigned int *key2ppfMap,
                                 float3 *modelPoints, float3 *modelNormals, int modelSize,
                                 float3 *scenePoints, float3 *sceneNormals, int sceneSize,
-                                unsigned int *votes, int count){
+                                unsigned long *votes, int count){
     if(count <= 1) return;
 
     int ind = threadIdx.x;
@@ -425,9 +425,13 @@ __global__ void ppf_vote_kernel(unsigned int *sceneKeys, unsigned int *sceneIndi
                                    thisScenePoint, thisSceneNormal, scene_i_point,
                                    d_dist, trans_vec, alpha);
                  votes[idx + j] = (((unsigned long)idx) << 32) | (model_r_index << 6) | (alpha);
+                 // begin step 2 of algorithm here
+                 // either give up vector row locality and use hashes for faster sorting of unsigned longs
+                 // or stash trans vec and index into a float4 and sort array of float4
              }
 
         }
 
     }
 }
+

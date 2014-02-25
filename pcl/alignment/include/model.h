@@ -18,13 +18,11 @@ class Model : public Scene {
 
         ~Model();
 
-        thrust::device_vector<unsigned int> *ppf_lookup(Model *Model);
+        void ppf_lookup(Scene *scene);
 
     private:
 
-        // Vector of all hash keys. Use a parallel binary search to find
-        // index of desired hash key.
-        thrust::device_vector<unsigned int> *hashKeys;
+
 
         // ppfCount[i] is the number of PPFs whose hash is hashKeys[i];
         thrust::device_vector<unsigned int> *ppfCount;
@@ -41,14 +39,14 @@ class Model : public Scene {
         thrust::device_vector<unsigned int> *key2ppfMap;
 
         // Vector of all vote codes
-        thrust::device_vector<unsigned int> *votes;
+        thrust::device_vector<unsigned long> *votes;
 
         // Vector of unique vote codes
-        thrust::device_vector<unsigned int> *voteCodes;
+        thrust::device_vector<unsigned long> *voteCodes;
 
         // voteCount[i] is the number of votes associated with the
         // the vote code stored in voteCodes[i].
-        thrust::device_vector<unsigned int> *voteCount;
+        thrust::device_vector<unsigned int> *voteCounts;
 
         void accumulateVotes();
 };

@@ -58,7 +58,10 @@ __global__ void ppf_hash_kernel(float4 *ppfs, unsigned int *codes, int count);
 __global__ void ppf_vote_kernel(unsigned int *sceneKeys, unsigned int *sceneIndices,
                                 unsigned int *hashKeys, unsigned int *ppfCount,
                                 unsigned int *firstPPFIndex, unsigned int *key2ppfMap,
-                                unsigned int *found_ppf_start, unsigned int *found_ppf_count,
-                                int count);
+                                float3 *modelPoints, float3 *modelNormals, int modelSize,
+                                float3 *scenePoints, float3 *sceneNormals, int sceneSize,
+                                unsigned long *votes, int count);
+
+__global__ void clustering_kernel();
 
 #endif /* __KERNEL_H */
