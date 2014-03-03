@@ -13,6 +13,7 @@
 __const__ int n_angle = 32;
 __const__ float d_angle = 2*CUDART_PI_F/n_angle;
 __const__ float d_dist = 0.05;
+__const__ float score_threshold = 0.8;
 
 __device__ unsigned int hash(void *f, int n);
 __device__ __forceinline__ float dot(float3 v1, float3 v2);
@@ -53,6 +54,9 @@ __global__ void ppf_encode_kernel(float4 *ppfs, unsigned long *codes, int count)
 __global__ void ppf_decode_kernel(unsigned long *codes, unsigned int *key2ppfMap,
                                   unsigned int *hashKeys, int count);
 
+__global__ void vec_decode_kernel(float4 *vecs, unsigned int *key2VecMap,
+                                  float3 *vecCodes, int count);
+
 __global__ void ppf_hash_kernel(float4 *ppfs, unsigned int *codes, int count);
 
 __global__ void ppf_vote_kernel(unsigned int *sceneKeys, unsigned int *sceneIndices,
@@ -60,8 +64,21 @@ __global__ void ppf_vote_kernel(unsigned int *sceneKeys, unsigned int *sceneIndi
                                 unsigned int *firstPPFIndex, unsigned int *key2ppfMap,
                                 float3 *modelPoints, float3 *modelNormals, int modelSize,
                                 float3 *scenePoints, float3 *sceneNormals, int sceneSize,
-                                unsigned long *votes, int count);
+                                unsigned long *votes, float4 *vecCodes, int count);
 
-__global__ void clustering_kernel();
+__global__ void ppf_reduce_rows_kernel(float3 *vecs, unsigned int *vecCounts,
+                                       unsigned int *firstVecIndex,
+                                       unsigned int *key2VecMap,
+                                       unsigned long *voteCodes,
+                                       unsigned int *voteCounts,
+                                       int n_angle,
+                                       unsigned int *accumulator,
+                                       int count);
+
+__global__ void ppf_score_kernel(unsigned int *accumulator,
+                                 unsigned int *maxidx,
+                                 int n_angle, float threshold,
+                                 unsigned int *scores,
+                                 int count);
 
 #endif /* __KERNEL_H */

@@ -44,9 +44,25 @@ class Model : public Scene {
         // Vector of unique vote codes
         thrust::device_vector<unsigned long> *voteCodes;
 
-        // voteCount[i] is the number of votes associated with the
+        // voteCounts[i] is the number of votes associated with the
         // the vote code stored in voteCodes[i].
         thrust::device_vector<unsigned int> *voteCounts;
+
+        // Vector of unique vecs
+        thrust::device_vector<float3> *vecs;
+
+        // vecCounts[i] is the number of vecs associated with the
+        // the vec code stored in vecCodes[i].
+        thrust::device_vector<unsigned int> *vecCounts;
+
+        // firstVecIndex[i] is the index of the first entry in vecCodes
+        // corresponding to votes[i]. The following vecCounts[i]-1
+        // entries also correspond to vecCodes[i].
+        thrust::device_vector<unsigned int> *firstVecIndex;
+
+        // key2VecMap[i] is the index in votes that contains (one of) the
+        // vote(s) whose vector is vecs[i].
+        thrust::device_vector<unsigned int> *key2VecMap;
 
         void accumulateVotes();
 };

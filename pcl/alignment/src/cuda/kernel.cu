@@ -25,7 +25,6 @@ __device__ __forceinline__ float dot(float4 v1, float4 v2){
     return v1.x*v2.x + v1.y*v2.y + v1.z*v2.z + v1.w*v2.w;
 }
 
-
 __device__ __forceinline__ float norm(float3 v){
     return sqrtf(dot(v, v));
 }
@@ -116,10 +115,11 @@ __device__ void mat4f_mul(const float A[4][4],
                           const float B[4][4],
                           float C[4][4]){
     memset(C, 0, sizeof(C));
-    for(int i = 0; i < 4; i++) {
-        for(int j = 0; j < 4; j++) {
-            for(int k = 0; k < 4; k++)
+    for(int i = 0; i < 4; i++){
+        for(int j = 0; j < 4; j++){
+            for(int k = 0; k < 4; k++){
                 C[i][j] += A[i][k]*B[k][j];
+            }
         }
     }
 }
@@ -186,30 +186,19 @@ __device__ void trans_model_scene(float3 m_r, float3 n_r_m, float3 m_i,
     trans_vec = m_r;
 
     trans(m_r, transm);
-
     roty(atan2f(n_r_m.z, n_r_m.x), rot_y);
-
     n_tmp = homogenize(n_r_m);
-
     mat4f_vmul(rot_y, n_tmp);
-
     rotz(-1*atan2f(n_tmp.y, n_tmp.x), rot_z);
-
     mat4f_mul(rot_z, rot_y, T_tmp);
     mat4f_mul(T_tmp, transm, T_m_g);
 
-
     s_r = times(-1, s_r);
     trans(s_r, transm);
-
     roty(atan2f(n_r_s.z, n_r_s.x), rot_y);
-
     n_tmp = homogenize(n_r_s);
-
     mat4f_vmul(rot_y, n_tmp);
-
     rotz(-1*atan2f(n_tmp.y, n_tmp.x), rot_z);
-
     mat4f_mul(rot_z, rot_y, T_tmp);
     mat4f_mul(T_tmp, transm, T_s_g);
 
@@ -224,7 +213,6 @@ __device__ void trans_model_scene(float3 m_r, float3 n_r_m, float3 m_i,
 
     u.x = 0;
     v.x = 0;
-
     float alpha_tmp = atan2f(cross(u, v).x, dot(u, v));
     alpha = (int) roundf((alpha_tmp / (2*CUDART_PI_F) ) * (n_angle - 1));
 }
@@ -339,6 +327,20 @@ __global__ void ppf_decode_kernel(unsigned long *codes, unsigned int *key2ppfMap
     }
 }
 
+__global__ void vec_decode_kernel(float4 *vecs, unsigned int *key2VecMap,
+                                  float3 *vecCodes, int count){
+    if(count <= 1) return;
+
+    int ind = threadIdx.x;
+    int idx = ind + blockIdx.x * blockDim.x;
+
+    if(idx < count){
+        key2VecMap[idx] = *((unsigned int *) &(vecs[idx].w));
+        // key2VecMap[idx] = (unsigned int) (*((unsigned long long *) (vecs+idx)) & low32);
+        vecCodes[idx] = *((float3 *) (vecs+idx));
+    }
+}
+
 // TODO: increase thread work
 __global__ void ppf_hash_kernel(float4 *ppfs, unsigned int *codes, int count){
     if(count <= 1) return;
@@ -389,13 +391,14 @@ __global__ void ppf_vote_kernel(unsigned int *sceneKeys, unsigned int *sceneIndi
                                 unsigned int *firstPPFIndex, unsigned int *key2ppfMap,
                                 float3 *modelPoints, float3 *modelNormals, int modelSize,
                                 float3 *scenePoints, float3 *sceneNormals, int sceneSize,
-                                unsigned long *votes, int count){
+                                unsigned long *votes, float4 *vecCodes, int count){
     if(count <= 1) return;
 
     int ind = threadIdx.x;
     int idx = ind + blockIdx.x * blockDim.x;
     unsigned int alpha;
     float3 trans_vec;
+    float4 trans_vec_code;
 
     if(idx < count){
         unsigned int thisSceneKey = sceneKeys[idx];
@@ -428,10 +431,80 @@ __global__ void ppf_vote_kernel(unsigned int *sceneKeys, unsigned int *sceneIndi
                  // begin step 2 of algorithm here
                  // either give up vector row locality and use hashes for faster sorting of unsigned longs
                  // or stash trans vec and index into a float4 and sort array of float4
+                 trans_vec_code.x = trans_vec.x;
+                 trans_vec_code.y = trans_vec.y;
+                 trans_vec_code.z = trans_vec.z;
+                 trans_vec_code.w = idx;
+                 vecCodes[idx + j] = trans_vec_code;
              }
-
         }
-
     }
 }
 
+/*
+  for vec in unique_vecs:
+    int angle_histogram[32];
+    for index in vec:
+      voteCode = voteCodes[index]
+      voteCount = voteCounts[index]
+      thisSceneRefPt;
+      thisModelPt;
+      thisAngle;
+      angle_histogram[angle_index] += voteCount;
+ */
+
+// TODO: increase thread work
+__global__ void ppf_reduce_rows_kernel(float3 *vecs, unsigned int *vecCounts,
+                                       unsigned int *firstVecIndex,
+                                       unsigned int *key2VecMap,
+                                       unsigned long *voteCodes,
+                                       unsigned int *voteCounts,
+                                       int n_angle,
+                                       unsigned int *accumulator,
+                                       int count){
+    if(count <= 1) return;
+
+    int ind = threadIdx.x;
+    int idx = ind + blockIdx.x * blockDim.x;
+    float3 thisVec;
+    unsigned int thisVecCount, thisVecIndex;
+    int angle_idx;
+    unsigned int voteCode, voteCount;
+
+    unsigned long low6 = ((unsigned long) -1) >> 58;
+
+    if(idx < count){
+        thisVec = vecs[idx];
+        thisVecCount = vecCounts[idx];
+        thisVecIndex = firstVecIndex[idx];
+        memset(accumulator+idx, 0, n_angle*sizeof(unsigned int));
+        for(int i = 0; i < thisVecCount; i++){
+            voteCode = voteCodes[thisVecIndex+i];
+            voteCount = voteCounts[thisVecIndex+i];
+            angle_idx = voteCode & low6;
+            accumulator[idx+angle_idx] += voteCount;
+        }
+    }
+}
+
+// TODO: increase thread work
+__global__ void ppf_score_kernel(unsigned int *accumulator,
+                                 unsigned int *maxidx,
+                                 int n_angle, float threshold,
+                                 unsigned int *scores,
+                                 int count){
+    if(count <= 1) return;
+
+    int ind = threadIdx.x;
+    int idx = ind + blockIdx.x * blockDim.x;
+
+    int thisMaxIdx, score, score_left, score_right;
+
+    if(idx < count){
+        thisMaxIdx = idx*n_angle + maxidx[idx];
+        score_left = thisMaxIdx > 0 ? accumulator[thisMaxIdx-1] : 0;
+        score_right = thisMaxIdx < (n_angle-1) ? accumulator[thisMaxIdx+1] : 0;
+        score = accumulator[thisMaxIdx] + score_left + score_right;
+        scores[idx] = score > threshold ? score : 0;
+    }
+}
