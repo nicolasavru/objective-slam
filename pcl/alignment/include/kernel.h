@@ -51,8 +51,9 @@ __global__ void ppf_kernel(float3 *points, float3 *norms, float4 *out, int count
 
 __global__ void ppf_encode_kernel(float4 *ppfs, unsigned long *codes, int count);
 
-__global__ void ppf_decode_kernel(unsigned long *codes, unsigned int *key2ppfMap,
-                                  unsigned int *hashKeys, int count);
+// Splits the longs in codes into arrays of high and low integers
+__global__ void ppf_decode_kernel(unsigned long *codes, unsigned int *lowBits32,
+                                  unsigned int *highBits32, int count);
 
 __global__ void vec_decode_kernel(float4 *vecs, unsigned int *key2VecMap,
                                   float3 *vecCodes, int count);
@@ -69,7 +70,7 @@ __global__ void ppf_vote_kernel(unsigned int *sceneKeys, unsigned int *sceneIndi
 __global__ void ppf_reduce_rows_kernel(float3 *vecs, unsigned int *vecCounts,
                                        unsigned int *firstVecIndex,
                                        unsigned int *key2VecMap,
-                                       unsigned long *voteCodes,
+                                       unsigned int *voteCodesLow,
                                        unsigned int *voteCounts,
                                        int n_angle,
                                        unsigned int *accumulator,

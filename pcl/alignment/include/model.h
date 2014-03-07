@@ -41,8 +41,9 @@ class Model : public Scene {
         // Vector of all vote codes
         thrust::device_vector<unsigned long> *votes;
 
-        // Vector of unique vote codes
-        thrust::device_vector<unsigned long> *voteCodes;
+        // Vectors of unique vote codes
+        thrust::device_vector<unsigned int> *voteCodesHigh;
+        thrust::device_vector<unsigned int> *voteCodesLow;
 
         // voteCounts[i] is the number of votes associated with the
         // the vote code stored in voteCodes[i].

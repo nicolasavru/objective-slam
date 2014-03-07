@@ -66,13 +66,27 @@ void test_histogram(char *point_path, int N){
     }
 }
 
-int ply_load_main(char *point_path, char *norm_path, int N){
+int ply_load_main(char *point_path, char *norm_path, int N, int devUse){
     // test_histogram("/tmp/hist_test.bin", 10000);
     // return 0;
 
     // file input
     FILE *points_fin, *norms_fin;
     size_t result1, result2;
+
+    int numDevices;
+    cudaGetDeviceCount(&numDevices);
+    fprintf(stdout, "numDevices: %d\n", numDevices);
+    cudaDeviceProp prop;
+    for(int i = 0; i < numDevices; i++){
+        cudaGetDeviceProperties(&prop, i);
+        fprintf(stdout, "%d) name: %s\n", i, prop.name);
+    }
+    cudaSetDevice(devUse);
+    int devNum;
+    cudaGetDevice(&devNum);
+    HANDLE_ERROR(cudaGetDeviceProperties(&prop, devNum));
+    fprintf(stdout, "Using device %d, %s: \n", devNum, prop.name);
 
     points_fin = fopen(point_path, "rb");
     norms_fin  = fopen(norm_path, "rb");
@@ -96,8 +110,6 @@ int ply_load_main(char *point_path, char *norm_path, int N){
     if(result2 != N){fputs ("Reading error: norms",stderr); exit(3);}
 
     // cuda setup
-    cudaDeviceProp prop;
-    HANDLE_ERROR(cudaGetDeviceProperties(&prop, 0));
     int blocks = prop.multiProcessorCount;
     /* DEBUG */
     fprintf(stderr, "blocks: %d\n", blocks);
