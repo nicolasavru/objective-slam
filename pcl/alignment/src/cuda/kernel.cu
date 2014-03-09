@@ -311,8 +311,8 @@ __global__ void ppf_encode_kernel(float4 *ppfs, unsigned long *codes, int count)
 }
 
 // TODO: increase thread work
-__global__ void ppf_decode_kernel(unsigned long *codes, unsigned int *lowBits32,
-                                  unsigned int *highBits32, int count){
+__global__ void ppf_decode_kernel(unsigned long *codes, unsigned int *key2ppfMap,
+                                  unsigned int *hashKeys, int count){
     if(count <= 1) return;
 
     int ind = threadIdx.x;
@@ -322,8 +322,8 @@ __global__ void ppf_decode_kernel(unsigned long *codes, unsigned int *lowBits32,
 
     if(idx < count){
         // line 11 in algorithm 1, typo on their part
-        lowBits32[idx] = (unsigned int) (codes[idx] & low32);
-        highBits32[idx] = (unsigned int) (codes[idx] >> 32);
+        key2ppfMap[idx] = (unsigned int) (codes[idx] & low32);
+        hashKeys[idx] = (unsigned int) (codes[idx] >> 32);
     }
 }
 
@@ -457,7 +457,7 @@ __global__ void ppf_vote_kernel(unsigned int *sceneKeys, unsigned int *sceneIndi
 __global__ void ppf_reduce_rows_kernel(float3 *vecs, unsigned int *vecCounts,
                                        unsigned int *firstVecIndex,
                                        unsigned int *key2VecMap,
-                                       unsigned int *voteCodesLow,
+                                       unsigned long *voteCodes,
                                        unsigned int *voteCounts,
                                        int n_angle,
                                        unsigned int *accumulator,
@@ -471,7 +471,7 @@ __global__ void ppf_reduce_rows_kernel(float3 *vecs, unsigned int *vecCounts,
     int angle_idx;
     unsigned int voteCode, voteCount;
 
-    unsigned int low6 = ((unsigned int) -1) >> 26;
+    unsigned long low6 = ((unsigned long) -1) >> 58;
 
     if(idx < count){
         thisVec = vecs[idx];
@@ -479,7 +479,7 @@ __global__ void ppf_reduce_rows_kernel(float3 *vecs, unsigned int *vecCounts,
         thisVecIndex = firstVecIndex[idx];
         memset(accumulator+idx, 0, n_angle*sizeof(unsigned int));
         for(int i = 0; i < thisVecCount; i++){
-            voteCode = voteCodesLow[thisVecIndex+i];
+            voteCode = voteCodes[thisVecIndex+i];
             voteCount = voteCounts[thisVecIndex+i];
             angle_idx = voteCode & low6;
             accumulator[idx+angle_idx] += voteCount;

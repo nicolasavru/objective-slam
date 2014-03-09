@@ -51,8 +51,7 @@ Model::Model(thrust::host_vector<float3> *points, thrust::host_vector<float3> *n
                            this->firstPPFIndex->begin());
 
     this->votes = NULL;
-    this->voteCodesHigh = NULL;
-    this->voteCodesLow = NULL;
+    this->voteCodes = NULL;
     this->voteCounts = NULL;
 }
 // TODO: Deallocate memory for things not here yet
@@ -61,8 +60,7 @@ Model::~Model(){
     delete this->firstPPFIndex;
     delete this->key2ppfMap;
     if (this->votes != NULL) delete this->votes;
-    if (this->voteCodesHigh != NULL) delete this->voteCodesHigh;
-    if (this->voteCodesLow != NULL) delete this->voteCodesLow;
+    if (this->voteCodes != NULL) delete this->voteCodes;
     if (this->voteCounts != NULL) delete this->voteCounts;
 }
 
@@ -84,7 +82,7 @@ void Model::ppf_lookup(Scene *scene){
         new thrust::device_vector<unsigned int>(scene->getModelPPFs()->size());
 
     // Steps 1, 3
-    // launch voting kernel instance for each scene reference point
+    // launch voting kernel instance for each scene reference pointt
     this->votes = new thrust::device_vector<unsigned long>(scene->getModelPPFs()->size());
     // vecCodes is an array of [trans vec|idx] packed as float4's
     thrust::device_vector<float4> *vecCodes = new thrust::device_vector<float4>(scene->getModelPPFs()->size());
@@ -154,7 +152,7 @@ void Model::ppf_lookup(Scene *scene){
                                                                          RAW_PTR(this->vecCounts),
                                                                          RAW_PTR(this->firstVecIndex),
                                                                          RAW_PTR(this->key2VecMap),
-                                                                         RAW_PTR(this->voteCodesLow),
+                                                                         RAW_PTR(this->voteCodes),
                                                                          RAW_PTR(this->voteCounts),
                                                                          n_angle,
                                                                          RAW_PTR(accumulator),
@@ -174,20 +172,11 @@ void Model::ppf_lookup(Scene *scene){
                                                                    this->vecs->size());
 
 
-
-
 }
 
 void Model::accumulateVotes(){
-    thrust::device_vector<unsigned long> *voteCodes = new thrust::device_vector<unsigned long>();
+    this->voteCodes = new thrust::device_vector<unsigned long>();
     this->voteCounts = new thrust::device_vector<unsigned int>();
     thrust::sort(this->votes->begin(), this->votes->end());
-    histogram_destructive(*(this->votes), *(voteCodes), *(this->voteCounts));
-    this->voteCodesHigh = new thrust::device_vector<unsigned int>(voteCodes->size());
-    this->voteCodesLow = new thrust::device_vector<unsigned int>(voteCodes->size());
-    ppf_decode_kernel<<<voteCodes->size()/BLOCK_SIZE,BLOCK_SIZE>>>(RAW_PTR(voteCodes),
-                                                                   RAW_PTR(this->voteCodesLow),
-                                                                   RAW_PTR(this->voteCodesHigh),
-                                                                   voteCodes->size());
-    delete voteCodes;
+    histogram_destructive(*(this->votes), *(this->voteCodes), *(this->voteCounts));
 }
