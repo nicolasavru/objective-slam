@@ -5,6 +5,7 @@
 #include <thrust/inner_product.h>
 #include <thrust/iterator/constant_iterator.h>
 #include <thrust/scan.h>
+#include <thrust/sequence.h>
 #include <thrust/device_vector.h>
 #include <thrust/binary_search.h>
 
@@ -16,27 +17,19 @@
 Model::Model(thrust::host_vector<float3> *points, thrust::host_vector<float3> *normals, int n){
     this->initPPFs(points, normals, n);
 
-    // for each ppf, compute a 32-bit hash and concatenate it with
-    // a 32-bit int representing the index of the ppf in d_ppfs
-    thrust::device_vector<unsigned long> *d_codes =
-        new thrust::device_vector<unsigned long>(this->modelPPFs->size());
-
-    ppf_encode_kernel<<<this->modelPPFs->size()/BLOCK_SIZE,BLOCK_SIZE>>>(RAW_PTR(this->modelPPFs),
-                                                                         RAW_PTR(d_codes),
-                                                                         this->modelPPFs->size());
-    thrust::sort(d_codes->begin(), d_codes->end());
-
-    // split codes into hashKeys_old, array of hashKeys (high 32 bits)
-    // and key2ppfMap, the associated indices (low 32 bits)
+    // key2ppfMap: associated indices ppf indices
     this->key2ppfMap = new thrust::device_vector<unsigned int>(this->modelPPFs->size());
+    thrust::sequence(key2ppfMap->begin(), key2ppfMap->end());
+
+    // hashKeys_old: array of hashKeys
     thrust::device_vector<unsigned int> *hashKeys_old =
         new thrust::device_vector<unsigned int>(this->modelPPFs->size());
 
-    ppf_decode_kernel<<<this->modelPPFs->size()/BLOCK_SIZE,BLOCK_SIZE>>>(RAW_PTR(d_codes),
-                                                                          RAW_PTR(this->key2ppfMap),
-                                                                          RAW_PTR(hashKeys_old),
-                                                                          this->modelPPFs->size());
-    delete d_codes;
+    // for each ppf, compute a 32-bit hash
+    ppf_hash_kernel<<<this->modelPPFs->size()/BLOCK_SIZE,BLOCK_SIZE>>>(RAW_PTR(this->modelPPFs),
+                                                                       RAW_PTR(hashKeys_old),
+                                                                       this->modelPPFs->size());
+    thrust::sort_by_key(hashKeys_old->begin(), hashKeys_old->end(), key2ppfMap->begin());
 
     this->hashKeys = new thrust::device_vector<unsigned int>();
     this->ppfCount = new thrust::device_vector<unsigned int>();
@@ -76,43 +69,32 @@ void Model::ppf_lookup(Scene *scene){
                         scene->getHashKeys()->end(),
                         sceneIndices->begin());
 
-    thrust::device_vector<unsigned int> *found_ppf_starts =
-        new thrust::device_vector<unsigned int>(scene->getModelPPFs()->size());
-    thrust::device_vector<unsigned int> *found_ppf_count =
-        new thrust::device_vector<unsigned int>(scene->getModelPPFs()->size());
-
-    // Steps 1, 3
+    // Steps 1-3
     // launch voting kernel instance for each scene reference point
     this->votes = new thrust::device_vector<unsigned long>(scene->getModelPPFs()->size());
-    // vecCodes is an array of [trans vec|idx] packed as float4's
-    thrust::device_vector<float4> *vecCodes = new thrust::device_vector<float4>(scene->getModelPPFs()->size());
-    // populates parallel arrays votes and vecCodes
+
+    // vecs_old is an array of (soon to be) sorted translation vectors
+    thrust::device_vector<float3> *vecs_old =
+        new thrust::device_vector<float3>(this->modelPPFs->size());
+
+    // populates parallel arrays votes and vecs_old
     ppf_vote_kernel<<<n/BLOCK_SIZE,BLOCK_SIZE>>>(RAW_PTR(scene->getHashKeys()), RAW_PTR(sceneIndices),
                                                  RAW_PTR(this->hashKeys), RAW_PTR(this->ppfCount),
                                                  RAW_PTR(this->firstPPFIndex), RAW_PTR(this->key2ppfMap),
                                                  RAW_PTR(this->modelPoints), RAW_PTR(this->modelNormals),
                                                  this->n, RAW_PTR(scene->getModelPoints()),
                                                  RAW_PTR(scene->getModelNormals()), scene->numPoints(),
-                                                 RAW_PTR(this->votes), RAW_PTR(vecCodes),
+                                                 RAW_PTR(this->votes), RAW_PTR(vecs_old),
                                                  scene->numPoints());
     // populates voteCodes and voteCounts, sorts votes
     this->accumulateVotes();
 
-    thrust::sort(vecCodes->begin(), vecCodes->end());
+    this->key2VecMap = new thrust::device_vector<unsigned int>(vecs_old->size());
+    thrust::sequence(key2VecMap->begin(), key2VecMap->end());
 
-    // TODO: fix segfault that will happen here, vecs not initialized yet
-    this->key2VecMap = new thrust::device_vector<unsigned int>(vecs->size());
-    // vecs_old is an array of sorted translation vectors
-    thrust::device_vector<float3> *vecs_old =
-        new thrust::device_vector<float3>(this->modelPPFs->size());
+    thrust::sort_by_key(vecs_old->begin(), vecs_old->end(), key2VecMap->begin());
 
-    vec_decode_kernel<<<this->modelPPFs->size()/BLOCK_SIZE,BLOCK_SIZE>>>(RAW_PTR(vecCodes),
-                                                                         RAW_PTR(this->key2VecMap),
-                                                                         RAW_PTR(vecs_old),
-                                                                         this->modelPPFs->size());
-    delete vecCodes;
-
-    // Step 3, 4
+    // Step 4
 
     // accumulator is an n*n_angle matrix where the ith row
     // corresponds to the translation vector vecs[i] and the jth
@@ -174,7 +156,7 @@ void Model::ppf_lookup(Scene *scene){
                                                                    this->vecs->size());
 
     // Step 8, 9
-    // call trans calc kernel
+    // call trans_calc_kernel
 
 
 

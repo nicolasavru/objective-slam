@@ -318,50 +318,6 @@ __global__ void ppf_kernel(float3 *points, float3 *norms, float4 *out, int count
 }
 
 // TODO: increase thread work
-__global__ void ppf_encode_kernel(float4 *ppfs, unsigned long *codes, int count){
-    if(count <= 1) return;
-
-    int ind = threadIdx.x;
-    int idx = ind + blockIdx.x * blockDim.x;
-
-    if(idx < count){
-        unsigned int hk = hash(ppfs+idx, sizeof(float4));
-        codes[idx] = (((unsigned long) hk) << 32) + idx;
-    }
-}
-
-// TODO: increase thread work
-__global__ void ppf_decode_kernel(unsigned long *codes, unsigned int *key2ppfMap,
-                                  unsigned int *hashKeys, int count){
-    if(count <= 1) return;
-
-    int ind = threadIdx.x;
-    int idx = ind + blockIdx.x * blockDim.x;
-
-    unsigned long low32 = ((unsigned long) -1) >> 32;
-
-    if(idx < count){
-        // line 11 in algorithm 1, typo on their part
-        key2ppfMap[idx] = (unsigned int) (codes[idx] & low32);
-        hashKeys[idx] = (unsigned int) (codes[idx] >> 32);
-    }
-}
-
-__global__ void vec_decode_kernel(float4 *vecs, unsigned int *key2VecMap,
-                                  float3 *vecCodes, int count){
-    if(count <= 1) return;
-
-    int ind = threadIdx.x;
-    int idx = ind + blockIdx.x * blockDim.x;
-
-    if(idx < count){
-        key2VecMap[idx] = *((unsigned int *) &(vecs[idx].w));
-        // key2VecMap[idx] = (unsigned int) (*((unsigned long long *) (vecs+idx)) & low32);
-        vecCodes[idx] = *((float3 *) (vecs+idx));
-    }
-}
-
-// TODO: increase thread work
 __global__ void ppf_hash_kernel(float4 *ppfs, unsigned int *codes, int count){
     if(count <= 1) return;
 
@@ -411,14 +367,13 @@ __global__ void ppf_vote_kernel(unsigned int *sceneKeys, unsigned int *sceneIndi
                                 unsigned int *firstPPFIndex, unsigned int *key2ppfMap,
                                 float3 *modelPoints, float3 *modelNormals, int modelSize,
                                 float3 *scenePoints, float3 *sceneNormals, int sceneSize,
-                                unsigned long *votes, float4 *vecCodes, int count){
+                                unsigned long *votes, float4 *vecs_old, int count){
     if(count <= 1) return;
 
     int ind = threadIdx.x;
     int idx = ind + blockIdx.x * blockDim.x;
     unsigned int alpha;
     float3 trans_vec;
-    float4 trans_vec_code;
 
     if(idx < count){
         unsigned int thisSceneKey = sceneKeys[idx];
@@ -452,11 +407,11 @@ __global__ void ppf_vote_kernel(unsigned int *sceneKeys, unsigned int *sceneIndi
                  // begin step 2 of algorithm here
                  // either give up vector row locality and use hashes for faster sorting of unsigned longs
                  // or stash trans vec and index into a float4 and sort array of float4
-                 trans_vec_code.x = trans_vec.x;
-                 trans_vec_code.y = trans_vec.y;
-                 trans_vec_code.z = trans_vec.z;
-                 trans_vec_code.w = idx;
-                 vecCodes[idx + j] = trans_vec_code;
+                 // trans_vec_code.x = trans_vec.x;
+                 // trans_vec_code.y = trans_vec.y;
+                 // trans_vec_code.z = trans_vec.z;
+                 // trans_vec_code.w = idx;
+                 vecs_old[idx + j] = trans_vec;
              }
         }
     }
