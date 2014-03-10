@@ -30,6 +30,19 @@ __device__ bool operator<(const float4 a, const float4 b){
     return false;
 }
 
+__device__ bool operator<(const float3 a, const float3 b){
+    // compare 4 bytes at a time instead of 2
+    ulong2 ul2a = *((ulong2 *) &a);
+    ulong2 ul2b = *((ulong2 *) &b);
+
+    if((ul2a.x < ul2b.x) ||
+       ((ul2a.x == ul2b.x) && (a.z < a.y))){
+        return true;
+    }
+    return false;
+}
+
+
 __device__ bool operator==(const float3 a, const float3 b){
     // compare 4 bytes at a time instead of 2
     // Is allocating two variables worth saving a comparison and a bitwise and?

@@ -367,7 +367,7 @@ __global__ void ppf_vote_kernel(unsigned int *sceneKeys, unsigned int *sceneIndi
                                 unsigned int *firstPPFIndex, unsigned int *key2ppfMap,
                                 float3 *modelPoints, float3 *modelNormals, int modelSize,
                                 float3 *scenePoints, float3 *sceneNormals, int sceneSize,
-                                unsigned long *votes, float4 *vecs_old, int count){
+                                unsigned long *votes, float3 *vecs_old, int count){
     if(count <= 1) return;
 
     int ind = threadIdx.x;
@@ -407,10 +407,6 @@ __global__ void ppf_vote_kernel(unsigned int *sceneKeys, unsigned int *sceneIndi
                  // begin step 2 of algorithm here
                  // either give up vector row locality and use hashes for faster sorting of unsigned longs
                  // or stash trans vec and index into a float4 and sort array of float4
-                 // trans_vec_code.x = trans_vec.x;
-                 // trans_vec_code.y = trans_vec.y;
-                 // trans_vec_code.z = trans_vec.z;
-                 // trans_vec_code.w = idx;
                  vecs_old[idx + j] = trans_vec;
              }
         }
@@ -458,7 +454,7 @@ __global__ void ppf_reduce_rows_kernel(float3 *vecs, unsigned int *vecCounts,
         for(int i = 0; i < thisVecCount; i++){
             voteCode = voteCodes[thisVecIndex+i];
             voteCount = voteCounts[thisVecIndex+i];
-            angle_idx = voteCode & hi6;
+            angle_idx = voteCode & low6;
             accumulator[idx+angle_idx] += voteCount;
         }
     }
