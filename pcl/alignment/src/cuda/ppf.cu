@@ -76,17 +76,17 @@ int ply_load_main(char *point_path, char *norm_path, int N, int devUse){
 
     int numDevices;
     cudaGetDeviceCount(&numDevices);
-    fprintf(stdout, "numDevices: %d\n", numDevices);
+    fprintf(stderr, "numDevices: %d\n", numDevices);
     cudaDeviceProp prop;
     for(int i = 0; i < numDevices; i++){
         cudaGetDeviceProperties(&prop, i);
-        fprintf(stdout, "%d) name: %s\n", i, prop.name);
+        fprintf(stderr, "%d) name: %s\n", i, prop.name);
     }
     cudaSetDevice(devUse);
     int devNum;
     cudaGetDevice(&devNum);
     HANDLE_ERROR(cudaGetDeviceProperties(&prop, devNum));
-    fprintf(stdout, "Using device %d, %s: \n", devNum, prop.name);
+    fprintf(stderr, "Using device %d, %s: \n", devNum, prop.name);
 
     points_fin = fopen(point_path, "rb");
     norms_fin  = fopen(norm_path, "rb");
@@ -104,7 +104,7 @@ int ply_load_main(char *point_path, char *norm_path, int N, int devUse){
     result2 = fread(RAW_PTR(norms),sizeof(float3),N,norms_fin);
     long finishTime0 = clock();
 
-    cout<<"Data Load Time"<<" "<<(finishTime0 - startTime0)<<" ms"<<endl;
+    cerr<<"Data Load Time"<<" "<<(finishTime0 - startTime0)<<" ms"<<endl;
 
     if(result1 != N){fputs ("Reading error: points",stderr); exit(3);}
     if(result2 != N){fputs ("Reading error: norms",stderr); exit(3);}

@@ -82,10 +82,11 @@ void Model::ppf_lookup(Scene *scene){
         new thrust::device_vector<unsigned int>(scene->getModelPPFs()->size());
 
     // Steps 1, 3
-    // launch voting kernel instance for each scene reference pointt
+    // launch voting kernel instance for each scene reference point
     this->votes = new thrust::device_vector<unsigned long>(scene->getModelPPFs()->size());
     // vecCodes is an array of [trans vec|idx] packed as float4's
     thrust::device_vector<float4> *vecCodes = new thrust::device_vector<float4>(scene->getModelPPFs()->size());
+    // populates parallel arrays votes and vecCodes
     ppf_vote_kernel<<<n/BLOCK_SIZE,BLOCK_SIZE>>>(RAW_PTR(scene->getHashKeys()), RAW_PTR(sceneIndices),
                                                  RAW_PTR(this->hashKeys), RAW_PTR(this->ppfCount),
                                                  RAW_PTR(this->firstPPFIndex), RAW_PTR(this->key2ppfMap),
@@ -94,11 +95,12 @@ void Model::ppf_lookup(Scene *scene){
                                                  RAW_PTR(scene->getModelNormals()), scene->numPoints(),
                                                  RAW_PTR(this->votes), RAW_PTR(vecCodes),
                                                  scene->numPoints());
+    // populates voteCodes and voteCounts, sorts votes
     this->accumulateVotes();
-
 
     thrust::sort(vecCodes->begin(), vecCodes->end());
 
+    // TODO: fix segfault that will happen here, vecs not initialized yet
     this->key2VecMap = new thrust::device_vector<unsigned int>(vecs->size());
     // vecs_old is an array of sorted translation vectors
     thrust::device_vector<float3> *vecs_old =
@@ -171,12 +173,16 @@ void Model::ppf_lookup(Scene *scene){
                                                                    RAW_PTR(scores),
                                                                    this->vecs->size());
 
+    // Step 8, 9
+    // call trans calc kernel
+
+
+
 
 }
 
 void Model::accumulateVotes(){
     this->voteCodes = new thrust::device_vector<unsigned long>();
     this->voteCounts = new thrust::device_vector<unsigned int>();
-    thrust::sort(this->votes->begin(), this->votes->end());
-    histogram_destructive(*(this->votes), *(this->voteCodes), *(this->voteCounts));
+    histogram(*(this->votes), *(this->voteCodes), *(this->voteCounts));
 }

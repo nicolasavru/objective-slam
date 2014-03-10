@@ -38,7 +38,8 @@ class Model : public Scene {
         // calculated.
         thrust::device_vector<unsigned int> *key2ppfMap;
 
-        // Vector of all vote codes
+        // Vector of all vote codes [Scene Ref Point|Model Point|Angle]
+        //                           63           32 31        6 5   0
         thrust::device_vector<unsigned long> *votes;
 
         // Vector of unique vote codes

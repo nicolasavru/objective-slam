@@ -217,6 +217,26 @@ __device__ void trans_model_scene(float3 m_r, float3 n_r_m, float3 m_i,
     alpha = (int) roundf((alpha_tmp / (2*CUDART_PI_F) ) * (n_angle - 1));
 }
 
+__device__ void compute_rot_angles(float3 n_r_m, float3 n_r_s,
+                                   float *m_roty, float *m_rotz,
+                                   float *s_roty, float *s_rotz){
+    float rot_y[4][4];
+    float4 n_tmp;
+
+    *m_roty = atan2f(n_r_m.z, n_r_m.x);
+    roty(*m_roty, rot_y);
+    n_tmp = homogenize(n_r_m);
+    mat4f_vmul(rot_y, n_tmp);
+    *m_rotz = -1*atan2f(n_tmp.y, n_tmp.x);
+
+    *s_roty = atan2f(n_r_s.z, n_r_s.x);
+    roty(*s_roty, rot_y);
+    n_tmp = homogenize(n_r_s);
+    mat4f_vmul(rot_y, n_tmp);
+    *s_rotz = -1*atan2f(n_tmp.y, n_tmp.x);
+}
+
+
 __device__ void trans_model_scene_matlab(float3 m_r, float3 n_r_m, float3 m_i,
                                   float3 s_r, float3 n_r_s, float3 s_i,
                                   float T_m_g[4][4], float T_s_g[4][4], float &alpha){
@@ -373,7 +393,7 @@ __global__ void ppf_hash_kernel(float4 *ppfs, unsigned int *codes, int count){
 //      find max angle
 //      score according to max angle + neighbors
 // 7) compare score to threshold
-// 8) get list of votes associated with uniqe trans vec and max angle + neighbors
+// 8) get list of votes associated with unique trans vec and max angle + neighbors
 // 9) At this point, we have a list of clusters of (scene point, model point, angle)
 //    tuples.
 //    for each tuple:
@@ -428,6 +448,7 @@ __global__ void ppf_vote_kernel(unsigned int *sceneKeys, unsigned int *sceneIndi
                                    thisScenePoint, thisSceneNormal, scene_i_point,
                                    d_dist, trans_vec, alpha);
                  votes[idx + j] = (((unsigned long)idx) << 32) | (model_r_index << 6) | (alpha);
+                 // votes[idx + j] = (alpha << 58) | (model_r_index << 32) | ((unsigned long)idx);
                  // begin step 2 of algorithm here
                  // either give up vector row locality and use hashes for faster sorting of unsigned longs
                  // or stash trans vec and index into a float4 and sort array of float4
@@ -454,6 +475,7 @@ __global__ void ppf_vote_kernel(unsigned int *sceneKeys, unsigned int *sceneIndi
  */
 
 // TODO: increase thread work
+// TODO: thisVec unused
 __global__ void ppf_reduce_rows_kernel(float3 *vecs, unsigned int *vecCounts,
                                        unsigned int *firstVecIndex,
                                        unsigned int *key2VecMap,
@@ -481,7 +503,7 @@ __global__ void ppf_reduce_rows_kernel(float3 *vecs, unsigned int *vecCounts,
         for(int i = 0; i < thisVecCount; i++){
             voteCode = voteCodes[thisVecIndex+i];
             voteCount = voteCounts[thisVecIndex+i];
-            angle_idx = voteCode & low6;
+            angle_idx = voteCode & hi6;
             accumulator[idx+angle_idx] += voteCount;
         }
     }
@@ -506,5 +528,66 @@ __global__ void ppf_score_kernel(unsigned int *accumulator,
         score_right = thisMaxIdx < (n_angle-1) ? accumulator[thisMaxIdx+1] : 0;
         score = accumulator[thisMaxIdx] + score_left + score_right;
         scores[idx] = score > threshold ? score : 0;
+    }
+}
+
+
+// for each transvec in maxidx:
+//   binary seach for transvec in vecs
+//   nevermind, we already know that - the ith row of the
+//   accumulator (and maxidx) corresponds to vec[i]
+
+//   goto found index in firstVecIndex and vecCounts
+//   Use that to find voteIndices in vec2VoteMap
+//   find possible starting indices of blocks matching Model hashKeys
+
+// TODO: increase thread work
+__global__ void trans_calc_kernel(float *vecs, unsigned int *vecCounts,
+                                  unsigned int *firstVecIndex, unsigned int *vec2VoteMap,
+                                  unsigned int *maxidx, unsigned long *votes, int n_angle,
+                                  float3 *model_points, float3 *model_normals,
+                                  float3 *scene_points, float3 *scene_normals,
+                                  unsigned int *output_RENAMEME,
+                                  int count){
+    if(count <= 1) return;
+
+    int ind = threadIdx.x;
+    int idx = ind + blockIdx.x * blockDim.x;
+
+    unsigned int thisVecCount, thisFirstVecIndex, angle_idx, model_point_idx, scene_point_idx;
+    unsigned long vote;
+
+    unsigned long low6 = ((unsigned long) -1) >> 58;
+    unsigned long hi32 = ((unsigned long) -1) << 32;
+    float m_roty_t, m_rotz_t, s_roty_t, s_rotz_t;
+
+    float m_roty = 0;
+    float m_rotz = 0;
+    float s_roty = 0;
+    float s_rotz = 0;
+
+
+    if(idx < count){
+        thisVecCount = vecCounts[idx];
+        thisFirstVecIndex = firstVecIndex[idx];
+
+        for(int i = 0; i < thisVecCount; i++){
+            vote = votes[vec2VoteMap[thisFirstVecIndex+i]];
+            angle_idx = (unsigned int) (vote & low6);
+            if(angle_idx != maxidx[idx]) continue;
+
+            scene_point_idx = (unsigned int) ((vote & hi32) >> 32);
+            model_point_idx = (unsigned int) (vote & low6);
+            compute_rot_angles(model_normals[model_point_idx],
+                               scene_normals[scene_point_idx],
+                               &m_roty_t, &m_rotz_t, &s_roty_t, &s_rotz_t);
+
+            // running average
+            m_roty = (m_roty_t + i*m_roty)/(i+1);
+            m_rotz = (m_rotz_t + i*m_rotz)/(i+1);
+            s_roty = (s_roty_t + i*s_roty)/(i+1);
+            s_rotz = (s_rotz_t + i*s_rotz)/(i+1);
+        }
+
     }
 }

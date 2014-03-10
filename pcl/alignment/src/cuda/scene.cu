@@ -55,7 +55,7 @@ void Scene::initPPFs(thrust::host_vector<float3> *points, thrust::host_vector<fl
         HANDLE_ERROR(cudaEventSynchronize(stop));
         float elapsedTime;
         HANDLE_ERROR(cudaEventElapsedTime(&elapsedTime, start, stop));
-        printf("Time to generate PPFs:  %3.1f ms\n", elapsedTime);
+        fprintf(stderr, "Time to generate PPFs:  %3.1f ms\n", elapsedTime);
     #endif
 }
 
