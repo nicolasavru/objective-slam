@@ -36,7 +36,7 @@ __device__ bool operator<(const float3 a, const float3 b){
     ulong2 ul2b = *((ulong2 *) &b);
 
     if((ul2a.x < ul2b.x) ||
-       ((ul2a.x == ul2b.x) && (a.z < a.y))){
+       ((ul2a.x == ul2b.x) && (a.z < b.z))){
         return true;
     }
     return false;
