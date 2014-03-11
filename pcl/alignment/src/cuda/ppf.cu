@@ -118,6 +118,8 @@ int ply_load_main(char *point_path, char *norm_path, int N, int devUse){
     // build model description
     Model *model = new Model(points, norms, N);
 
+    // model->ppf_lookup();
+
     // copy ppfs back to host
     thrust::host_vector<float4> *ppfs = new thrust::host_vector<float4>(*model->getModelPPFs());
 

@@ -124,6 +124,15 @@ __device__ void mat4f_mul(const float A[4][4],
     }
 }
 
+__device__ float3 mat3f_vmul(const float A[3][3], const float3 b){
+    float3 *Af3 = (float3 *) A;
+    float3 c;
+    c.x = dot(Af3[0], b);
+    c.y = dot(Af3[1], b);
+    c.z = dot(Af3[2], b);
+    return c;
+}
+
 __device__ float4 mat4f_vmul(const float A[4][4], const float4 b){
     float4 *Af4 = (float4 *) A;
     float4 c;
@@ -173,6 +182,32 @@ __device__ float4 minus(float4 u, float4 v){
     float4 w = {u.x-v.x, u.y-v.y, u.z-v.z, u.w-v.w};
     return w;
 }
+
+__device__ void invht(float T[4][4], float T_inv[4][4]){
+    float A_neg_transpose[3][3];
+    for (int i=0; i<3; i++){
+        for (int j=0; j<3; j++){
+            T_inv[i][j] = T[j][i];
+            A_neg_transpose[i][j] = -1*T[j][i];
+        }
+    }
+
+    float3 T_tmp;
+    T_tmp.x = T_inv[0][3];
+    T_tmp.y = T_inv[1][3];
+    T_tmp.z = T_inv[2][3];
+
+    float3 tmp = mat3f_vmul(A_neg_transpose, T_tmp);
+    T_inv[0][3] = tmp.x;
+    T_inv[1][3] = tmp.y;
+    T_inv[2][3] = tmp.z;
+
+    T_inv[3][0] = 0;
+    T_inv[3][1] = 0;
+    T_inv[3][2] = 0;
+    T_inv[3][3] = 1;
+}
+
 
 __device__ void trans_model_scene(float3 m_r, float3 n_r_m, float3 m_i,
                                   float3 s_r, float3 n_r_s, float3 s_i,
@@ -236,55 +271,33 @@ __device__ void compute_rot_angles(float3 n_r_m, float3 n_r_s,
     *s_rotz = -1*atan2f(n_tmp.y, n_tmp.x);
 }
 
+__device__ void compute_transforms(unsigned int angle_idx, float3 m_r,
+                                   float m_roty, float m_rotz,
+                                   float3 s_r, float s_roty,
+                                   float s_rotz, float T[4][4]){
+    float transm[4][4], rot_x[4][4], rot_y[4][4], rot_z[4][4], T_tmp[4][4],
+          T_tmp2[4][4], T_m_g[4][4], T_s_g[4][4];
 
-__device__ void trans_model_scene_matlab(float3 m_r, float3 n_r_m, float3 m_i,
-                                  float3 s_r, float3 n_r_s, float3 s_i,
-                                  float T_m_g[4][4], float T_s_g[4][4], float &alpha){
-    float transm[4][4], rot_y[4][4], rot_z[4][4], T_tmp[4][4];
-    float4 n_tmp;
-
+    m_r = discretize(m_r, d_dist);
     m_r = times(-1, m_r);
+
     trans(m_r, transm);
-
-    roty(atan2f(n_r_m.z, n_r_m.x), rot_y);
-
-    n_tmp = homogenize(n_r_m);
-
-    mat4f_vmul(rot_y, n_tmp);
-
-    rotz(-1*atan2f(n_tmp.y, n_tmp.x), rot_z);
-
+    roty(m_roty, rot_y);
+    rotz(m_rotz, rot_z);
     mat4f_mul(rot_z, rot_y, T_tmp);
     mat4f_mul(T_tmp, transm, T_m_g);
 
-
     s_r = times(-1, s_r);
     trans(s_r, transm);
-
-    roty(atan2f(n_r_s.z, n_r_s.x), rot_y);
-
-    n_tmp = homogenize(n_r_s);
-
-    mat4f_vmul(rot_y, n_tmp);
-
-    rotz(-1*atan2f(n_tmp.y, n_tmp.x), rot_z);
-
+    roty(s_roty, rot_y);
+    rotz(s_rotz, rot_z);
     mat4f_mul(rot_z, rot_y, T_tmp);
     mat4f_mul(T_tmp, transm, T_s_g);
 
-
-    n_tmp = homogenize(m_i);
-    n_tmp = mat4f_vmul(T_m_g, n_tmp);
-    float3 u = dehomogenize(n_tmp);
-
-    n_tmp = homogenize(s_i);
-    n_tmp = mat4f_vmul(T_s_g, n_tmp);
-    float3 v = dehomogenize(n_tmp);
-
-    u.x = 0;
-    v.x = 0;
-
-    alpha = atan2f(cross(u, v).x, dot(u, v));
+    rotx(angle_idx*2*CUDART_PI_F/n_angle, rot_x);
+    invht(T_s_g, T_tmp);
+    mat4f_mul(T_tmp, rot_x, T_tmp2);
+    mat4f_mul(T_tmp2, T_m_g, T);
 }
 
 __global__ void ppf_kernel(float3 *points, float3 *norms, float4 *out, int count){
@@ -493,13 +506,13 @@ __global__ void ppf_score_kernel(unsigned int *accumulator,
 //   find possible starting indices of blocks matching Model hashKeys
 
 // TODO: increase thread work
-__global__ void trans_calc_kernel(float *vecs, unsigned int *vecCounts,
+__global__ void trans_calc_kernel(float3 *vecs, unsigned int *vecCounts,
                                   unsigned int *firstVecIndex, unsigned int *vec2VoteMap,
                                   unsigned int *maxidx, unsigned long *votes, int n_angle,
                                   float3 *model_points, float3 *model_normals,
                                   float3 *scene_points, float3 *scene_normals,
-                                  unsigned int *output_RENAMEME,
-                                  int count){
+                                  int model_size, int scene_size,
+                                  float *transforms, int count){
     if(count <= 1) return;
 
     int ind = threadIdx.x;
@@ -525,10 +538,12 @@ __global__ void trans_calc_kernel(float *vecs, unsigned int *vecCounts,
         for(int i = 0; i < thisVecCount; i++){
             vote = votes[vec2VoteMap[thisFirstVecIndex+i]];
             angle_idx = (unsigned int) (vote & low6);
-            if(angle_idx != maxidx[idx]) continue;
+            if(((int) fabsf(angle_idx - maxidx[idx])) > 1) continue;
 
             scene_point_idx = (unsigned int) ((vote & hi32) >> 32);
+            scene_point_idx /= scene_size;
             model_point_idx = (unsigned int) (vote & low6);
+            model_point_idx /= model_size;
             compute_rot_angles(model_normals[model_point_idx],
                                scene_normals[scene_point_idx],
                                &m_roty_t, &m_rotz_t, &s_roty_t, &s_rotz_t);
@@ -539,6 +554,14 @@ __global__ void trans_calc_kernel(float *vecs, unsigned int *vecCounts,
             s_roty = (s_roty_t + i*s_roty)/(i+1);
             s_rotz = (s_rotz_t + i*s_rotz)/(i+1);
         }
+
+        compute_transforms(angle_idx, model_points[model_point_idx],
+                           m_roty, m_rotz,
+                           scene_points[scene_point_idx], s_roty,
+                           s_rotz, ((float (*)[4]) transforms + idx*16));
+
+
+
 
     }
 }

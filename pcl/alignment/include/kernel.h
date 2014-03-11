@@ -29,6 +29,7 @@ __device__ void rotx(float theta, float T[4][4]);
 __device__ void roty(float theta, float T[4][4]);
 __device__ void rotz(float theta, float T[4][4]);
 __device__ void mat4f_mul(const float A[4][4], const float B[4][4], float C[4][4]);
+__device__ float3 mat3f_vmul(const float A[3][3], const float3 b);
 __device__ float4 mat4f_vmul(const float A[4][4], const float4 b);
 __device__ float4 homogenize(float3 v);
 __device__ float3 dehomogenize(float4 v);
@@ -38,6 +39,7 @@ __device__ float3 plus(float3 u, float3 v);
 __device__ float4 plus(float4 u, float4 v);
 __device__ float3 minus(float3 u, float3 v);
 __device__ float4 minus(float4 u, float4 v);
+__device__ void invht(float T[4][4], float T_inv[4][4]);
 
 __device__ void trans_model_scene(float3 m_r, float3 n_r_m, float3 m_i,
                                   float3 s_r, float3 n_r_s, float3 s_i,
@@ -45,6 +47,11 @@ __device__ void trans_model_scene(float3 m_r, float3 n_r_m, float3 m_i,
                                   unsigned int &alpha);
 
 __device__ float4 compute_ppf(float3 p1, float3 n1, float3 p2, float3 n2);
+
+__device__ void compute_transforms(unsigned int angle_idx, float3 m_r,
+                                   float m_roty, float m_rotz,
+                                   float3 s_r, float s_roty,
+                                   float s_rotz, float T[4][4]);
 
 
 __global__ void ppf_kernel(float3 *points, float3 *norms, float4 *out, int count);
@@ -80,5 +87,13 @@ __global__ void ppf_score_kernel(unsigned int *accumulator,
                                  int n_angle, float threshold,
                                  unsigned int *scores,
                                  int count);
+
+__global__ void trans_calc_kernel(float3 *vecs, unsigned int *vecCounts,
+                                  unsigned int *firstVecIndex, unsigned int *vec2VoteMap,
+                                  unsigned int *maxidx, unsigned long *votes, int n_angle,
+                                  float3 *model_points, float3 *model_normals,
+                                  float3 *scene_points, float3 *scene_normals,
+                                  int model_size, int scene_size,
+                                  float *transforms, int count);
 
 #endif /* __KERNEL_H */

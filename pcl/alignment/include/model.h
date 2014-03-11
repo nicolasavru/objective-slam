@@ -63,7 +63,12 @@ class Model : public Scene {
 
         // key2VecMap[i] is the index in votes that contains (one of) the
         // vote(s) whose vector is vecs[i].
-        thrust::device_vector<unsigned int> *key2VecMap;
+        thrust::device_vector<unsigned int> *vec2VoteMap;
+
+
+        // transformations stores 4 by 4 arrays of transformation matrices
+        // however it uses linear indexing
+        thrust::device_vector<float> *transformations;
 
         void accumulateVotes();
 };

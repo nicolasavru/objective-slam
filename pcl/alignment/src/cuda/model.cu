@@ -89,10 +89,10 @@ void Model::ppf_lookup(Scene *scene){
     // populates voteCodes and voteCounts, sorts votes
     this->accumulateVotes();
 
-    this->key2VecMap = new thrust::device_vector<unsigned int>(vecs_old->size());
-    thrust::sequence(key2VecMap->begin(), key2VecMap->end());
+    this->vec2VoteMap = new thrust::device_vector<unsigned int>(vecs_old->size());
+    thrust::sequence(vec2VoteMap->begin(), vec2VoteMap->end());
 
-    thrust::sort_by_key(vecs_old->begin(), vecs_old->end(), key2VecMap->begin());
+    thrust::sort_by_key(vecs_old->begin(), vecs_old->end(), vec2VoteMap->begin());
 
     // Step 4
 
@@ -135,7 +135,7 @@ void Model::ppf_lookup(Scene *scene){
     ppf_reduce_rows_kernel<<<this->vecs->size()/BLOCK_SIZE,BLOCK_SIZE>>>(RAW_PTR(this->vecs),
                                                                          RAW_PTR(this->vecCounts),
                                                                          RAW_PTR(this->firstVecIndex),
-                                                                         RAW_PTR(this->key2VecMap),
+                                                                         RAW_PTR(this->vec2VoteMap),
                                                                          RAW_PTR(this->voteCodes),
                                                                          RAW_PTR(this->voteCounts),
                                                                          n_angle,
@@ -157,9 +157,24 @@ void Model::ppf_lookup(Scene *scene){
 
     // Step 8, 9
     // call trans_calc_kernel
+//    __global__ void trans_calc_kernel(float *vecs, unsigned int *vecCounts,
+//                                      unsigned int *firstVecIndex, unsigned int *vec2VoteMap,
+//                                      unsigned int *maxidx, unsigned long *votes, int n_angle,
+//                                      float3 *model_points, float3 *model_normals,
+//                                      float3 *scene_points, float3 *scene_normals,
+//                                      int model_size, float *transforms,
+//                                      int count);
 
+    this->transformations = new thrust::device_vector<float>(this->vecs->size()*16);
 
-
+    trans_calc_kernel<<<this->vecs->size()/BLOCK_SIZE,BLOCK_SIZE>>>(RAW_PTR(this->vecs), RAW_PTR(this->vecCounts),
+                                                                    RAW_PTR(this->firstVecIndex), RAW_PTR(this->vec2VoteMap),
+                                                                    RAW_PTR(maxidx), RAW_PTR(this->votes),
+                                                                    n_angle, RAW_PTR(this->modelPoints),
+                                                                    RAW_PTR(this->modelNormals), RAW_PTR(scene->getModelPoints()),
+                                                                    RAW_PTR(scene->getModelNormals()), this->modelPoints->size(),
+                                                                    scene->getModelPoints()->size(), RAW_PTR(this->transformations),
+                                                                    this->vecs->size());
 
 }
 
