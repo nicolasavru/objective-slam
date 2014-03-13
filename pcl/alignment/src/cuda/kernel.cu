@@ -213,12 +213,12 @@ __device__ void trans_model_scene(float3 m_r, float3 n_r_m, float3 m_i,
                                   float3 s_r, float3 n_r_s, float3 s_i,
                                   float d_dist, float3 &trans_vec,
                                   unsigned int &alpha){
-    float transm[4][4], rot_y[4][4], rot_z[4][4], T_tmp[4][4], T_m_g[4][4], T_s_g[4][4];
+    float transm[4][4], rot_x[4][4], rot_y[4][4], rot_z[4][4], T_tmp[4][4], T_m_g[4][4], T_s_g[4][4],
+    T_tmp2[4][4], T[4][4];
     float4 n_tmp;
 
     m_r = discretize(m_r, d_dist);
     m_r = times(-1, m_r);
-    trans_vec = m_r;
 
     trans(m_r, transm);
     roty(atan2f(n_r_m.z, n_r_m.x), rot_y);
@@ -250,6 +250,23 @@ __device__ void trans_model_scene(float3 m_r, float3 n_r_m, float3 m_i,
     v.x = 0;
     float alpha_tmp = atan2f(cross(u, v).x, dot(u, v));
     alpha = (int) roundf((alpha_tmp / (2*CUDART_PI_F) ) * (n_angle - 1));
+    rotx(alpha, rot_x);
+
+    invht(T_s_g, T_tmp);
+    mat4f_mul(T_tmp, rot_x, T_tmp2);
+    mat4f_mul(T_tmp2, T_m_g, T);
+    // T is T_ms
+
+    invht(T, T_tmp);
+    // T_tmp is T_sm
+
+    n_tmp = mat4f_vmul(T_tmp, homogenize(s_r));
+    // n_tmp is the scene point in model frame
+   n_tmp.x += T[0][3];
+   n_tmp.y += T[1][3];
+   n_tmp.z += T[2][3];
+
+    trans_vec = minus(dehomogenize(n_tmp), m_r);
 }
 
 __device__ void compute_rot_angles(float3 n_r_m, float3 n_r_s,
