@@ -111,21 +111,21 @@ int main(int argc, char **argv){
     float3 *object_points = (float3 *) malloc(object->points.size()*sizeof(float3));
     float3 *object_normals = (float3 *) malloc(object->points.size()*sizeof(float3));
     for (int i=0; i<scene->points.size(); i++){
-        scene_points->x = scene->points[i].x;
-        scene_points->y = scene->points[i].y;
-        scene_points->z = scene->points[i].z;
-        scene_normals->x = scene->points[i].normal_x;
-        scene_normals->y = scene->points[i].normal_y;
-        scene_normals->z = scene->points[i].normal_z;
+        (scene_points+i)->x = scene->points[i].x;
+        (scene_points+i)->y = scene->points[i].y;
+        (scene_points+i)->z = scene->points[i].z;
+        (scene_normals+i)->x = scene->points[i].normal_x;
+        (scene_normals+i)->y = scene->points[i].normal_y;
+        (scene_normals+i)->z = scene->points[i].normal_z;
     }
 
     for (int i=0; i<object->points.size(); i++){
-        object_points->x = object->points[i].x;
-        object_points->y = object->points[i].y;
-        object_points->z = object->points[i].z;
-        object_normals->x = object->points[i].normal_x;
-        object_normals->y = object->points[i].normal_y;
-        object_normals->z = object->points[i].normal_z;
+        (object_points+i)->x = object->points[i].x;
+        (object_points+i)->y = object->points[i].y;
+        (object_points+i)->z = object->points[i].z;
+        (object_normals+i)->x = object->points[i].normal_x;
+        (object_normals+i)->y = object->points[i].normal_y;
+        (object_normals+i)->z = object->points[i].normal_z;
     }
     ply_load_main(scene_points, scene_normals, scene->points.size(), object_points,
                   object_normals, object->points.size(), 0);

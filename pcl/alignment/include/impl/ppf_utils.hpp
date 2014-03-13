@@ -14,8 +14,19 @@
 #include <thrust/iterator/discard_iterator.h>
 #include <thrust/reduce.h>
 #include <thrust/sort.h>
+#include <iostream>
 
 #include "debug.h"
+
+std::ostream& operator<<(std::ostream& out, const float3& obj){
+    out << obj.x << ", " << obj.y << ", " << obj.z;
+    return out;
+}
+
+std::ostream& operator<<(std::ostream& out, const float4& obj){
+    out << obj.x << ", " << obj.y << ", " << obj.z << ", " << obj.w;
+    return out;
+}
 
 // Vectors can't be compared, you say? Don't worry about it.
 __device__ bool operator<(const float4 a, const float4 b){

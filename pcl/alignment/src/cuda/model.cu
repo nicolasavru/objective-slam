@@ -185,6 +185,33 @@ void Model::ppf_lookup(Scene *scene){
                                                                     this->vecs->size());
 
     #ifdef DEBUG
+        {
+            using namespace std;
+            for (int i=0; i<maxidx->size(); i++){
+                std::cerr << (*maxidx)[i] << std::endl;
+            }
+            std::cerr << std::endl;
+            for (int i=0; i<accumulator->size(); i++){
+                std::cerr << (*accumulator)[i] << std::endl;
+            }
+            std::cerr << std::endl;
+            for (int i=0; i<vecs->size(); i++){
+                std::cerr << (*vecs)[i] << std::endl;
+            }
+//            std::cerr << std::endl;
+//            for (int i=0; i<votes->size(); i++){
+//                std::cerr << (*votes)[i] << std::endl;
+//            }
+            std::cerr << std::endl;
+            for (int i=0; i<hashKeys->size(); i++){
+                std::cerr << (*hashKeys)[i] << std::endl;
+            }
+//            std::cerr << std::endl;
+//            for (int i=0; i<modelPPFs->size(); i++){
+//                std::cerr << (*modelPPFs)[i] << std::endl;
+//            }
+        }
+
         // end cuda timer
         HANDLE_ERROR(cudaEventRecord(stop, 0));
         HANDLE_ERROR(cudaEventSynchronize(stop));
