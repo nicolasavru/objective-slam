@@ -20,6 +20,8 @@ class Model : public Scene {
 
         void ppf_lookup(Scene *scene);
 
+        thrust::device_vector<float>* getTransformations();
+
     private:
 
 

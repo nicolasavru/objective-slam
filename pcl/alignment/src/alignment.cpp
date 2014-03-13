@@ -1,4 +1,6 @@
 #include <Eigen/Core>
+#include <cuda.h>
+#include <cuda_runtime.h>                // Stops underlining of __global__
 #include <pcl/point_types.h>
 #include <pcl/point_cloud.h>
 #include <pcl/common/time.h>
@@ -16,7 +18,7 @@
 #include <pcl/segmentation/sac_segmentation.h>
 #include <pcl/visualization/pcl_visualizer.h>
 
-#include "alignment.h"
+#include "ppf.h"
 //#include "my_ppf_registration.h"
 
 // Types
@@ -44,10 +46,10 @@ int main(int argc, char **argv){
         ply_load_main("/tmp/points.txt", "/tmp/norms.txt", N, 0);
         return 2;
     } else if (argc == 3){
-        int N = atoi(argv[1]);
-        int devUse = atoi(argv[2]);
-        ply_load_main("/tmp/points.txt", "/tmp/norms.txt", N, devUse);
-        return 2;
+//        int N = atoi(argv[1]);
+//        int devUse = atoi(argv[2]);
+//        ply_load_main("/tmp/points.txt", "/tmp/norms.txt", N, devUse);
+//        return 2;
     }
 
     // Get input object and scene
@@ -78,7 +80,7 @@ int main(int argc, char **argv){
     std::cerr << "object after filtering: " << object->width * object->height
             << " data points (" << pcl::getFieldsList(*object) << ")."
             << std::endl;
-    leaf = 0.01f;
+    leaf = 0.02f;
     grid.setLeafSize(leaf, leaf, leaf);
     std::cerr << "scene before filtering: " << scene->width * scene->height
             << " data points (" << pcl::getFieldsList(*scene) << ")."
@@ -103,92 +105,117 @@ int main(int argc, char **argv){
     nest_scene.setInputCloud(scene);
     nest_scene.compute(*scene);
 
-    // // Estimate features
-    // pcl::console::print_highlight ("Estimating features...\n");
-    // FeatureEstimationT fest;
-    // fest.setRadiusSearch (0.025);
-    // fest.setInputCloud (object);
-    // fest.setInputNormals (object);
-    // fest.compute (*object_features);
-    // fest.setInputCloud (scene);
-    // fest.setInputNormals (scene);
-    // fest.compute (*scene_features);
-
-    // Estimate features
-    FeatureEstimationT fest;
-    // fest.setRadiusSearch (0.025);
-    pcl::console::print_highlight("Estimating object features...\n");
-    fest.setInputCloud(object);
-    fest.setInputNormals(object);
-    fest.compute(*object_features);
-    // pcl::console::print_highlight ("Estimating scene features...\n");
-    // fest.setInputCloud (scene);
-    // fest.setInputNormals (scene);
-    // fest.compute (*scene_features);
-
-    // // Perform alignment
-    // pcl::console::print_highlight ("Starting alignment...\n");
-    // pcl::SampleConsensusPrerejective<PointNT,PointNT,FeatureT> align;
-    // align.setInputSource (object);
-    // align.setSourceFeatures (object_features);
-    // align.setInputTarget (scene);
-    // align.setTargetFeatures (scene_features);
-    // align.setNumberOfSamples (3); // Number of points to sample for generating/prerejecting a pose
-    // align.setCorrespondenceRandomness (2); // Number of nearest features to use
-    // align.setSimilarityThreshold (0.6f); // Polygonal edge length similarity threshold
-    // align.setMaxCorrespondenceDistance (1.5f * leaf); // Set inlier threshold
-    // align.setInlierFraction (0.25f); // Set required inlier fraction
-    // align.align (*object_aligned);
-
-    pcl::PPFHashMapSearch::Ptr searcher(new pcl::PPFHashMapSearch);
-    searcher->setInputFeatureCloud(object_features);
-
-    // Perform alignment
-    pcl::console::print_highlight("Starting alignment...\n");
-    pcl::PPFRegistration<PointNT, PointNT> align;
-    align.setInputSource(object);
-    // align.setSourceFeatures (object_features);
-    align.setInputTarget(scene);
-    align.setSearchMethod(searcher);
-    // align.setTargetFeatures (scene_features);
-    // align.setNumberOfSamples (3); // Number of points to sample for generating/prerejecting a pose
-    // align.setCorrespondenceRandomness (2); // Number of nearest features to use
-    // align.setSimilarityThreshold (0.6f); // Polygonal edge length similarity threshold
-    // align.setMaxCorrespondenceDistance (1.5f * leaf); // Set inlier threshold
-    // align.setInlierFraction (0.25f); // Set required inlier fraction
-    align.align(*object_aligned);
-
-    if (align.hasConverged()) {
-        // Print results
-        Eigen::Matrix4f transformation = align.getFinalTransformation();
-        pcl::console::print_info("    | %6.3f %6.3f %6.3f | \n",
-                transformation(0, 0), transformation(0, 1),
-                transformation(0, 2));
-        pcl::console::print_info("R = | %6.3f %6.3f %6.3f | \n",
-                transformation(1, 0), transformation(1, 1),
-                transformation(1, 2));
-        pcl::console::print_info("    | %6.3f %6.3f %6.3f | \n",
-                transformation(2, 0), transformation(2, 1),
-                transformation(2, 2));
-        pcl::console::print_info("\n");
-        pcl::console::print_info("t = < %0.3f, %0.3f, %0.3f >\n",
-                transformation(0, 3), transformation(1, 3),
-                transformation(2, 3));
-        pcl::console::print_info("\n");
-        // pcl::console::print_info ("Inliers: %i/%i\n", align.getInliers ().size (), object->size ());
-
-        // Show alignment
-        pcl::visualization::PCLVisualizer visu("Alignment");
-        visu.addPointCloud(scene, ColorHandlerT(scene, 0.0, 255.0, 0.0),
-                "scene");
-        visu.addPointCloud(object_aligned,
-                ColorHandlerT(object_aligned, 0.0, 0.0, 255.0),
-                "object_aligned");
-        visu.spin();
-    } else {
-        pcl::console::print_error("Alignment failed!\n");
-        return (1);
+    // TODO: Check for malloc errors
+    float3 *scene_points = (float3 *) malloc(scene->points.size()*sizeof(float3));
+    float3 *scene_normals = (float3 *) malloc(scene->points.size()*sizeof(float3));
+    float3 *object_points = (float3 *) malloc(object->points.size()*sizeof(float3));
+    float3 *object_normals = (float3 *) malloc(object->points.size()*sizeof(float3));
+    for (int i=0; i<scene->points.size(); i++){
+        scene_points->x = scene->points[i].x;
+        scene_points->y = scene->points[i].y;
+        scene_points->z = scene->points[i].z;
+        scene_normals->x = scene->points[i].normal_x;
+        scene_normals->y = scene->points[i].normal_y;
+        scene_normals->z = scene->points[i].normal_z;
     }
+
+    for (int i=0; i<object->points.size(); i++){
+        object_points->x = object->points[i].x;
+        object_points->y = object->points[i].y;
+        object_points->z = object->points[i].z;
+        object_normals->x = object->points[i].normal_x;
+        object_normals->y = object->points[i].normal_y;
+        object_normals->z = object->points[i].normal_z;
+    }
+    ply_load_main(scene_points, scene_normals, scene->points.size(), object_points,
+                  object_normals, object->points.size(), 0);
+
+//    // // Estimate features
+//    // pcl::console::print_highlight ("Estimating features...\n");
+//    // FeatureEstimationT fest;
+//    // fest.setRadiusSearch (0.025);
+//    // fest.setInputCloud (object);
+//    // fest.setInputNormals (object);
+//    // fest.compute (*object_features);
+//    // fest.setInputCloud (scene);
+//    // fest.setInputNormals (scene);
+//    // fest.compute (*scene_features);
+//
+//    // Estimate features
+//    FeatureEstimationT fest;
+//    // fest.setRadiusSearch (0.025);
+//    pcl::console::print_highlight("Estimating object features...\n");
+//    fest.setInputCloud(object);
+//    fest.setInputNormals(object);
+//    fest.compute(*object_features);
+//    // pcl::console::print_highlight ("Estimating scene features...\n");
+//    // fest.setInputCloud (scene);
+//    // fest.setInputNormals (scene);
+//    // fest.compute (*scene_features);
+//
+//    // // Perform alignment
+//    // pcl::console::print_highlight ("Starting alignment...\n");
+//    // pcl::SampleConsensusPrerejective<PointNT,PointNT,FeatureT> align;
+//    // align.setInputSource (object);
+//    // align.setSourceFeatures (object_features);
+//    // align.setInputTarget (scene);
+//    // align.setTargetFeatures (scene_features);
+//    // align.setNumberOfSamples (3); // Number of points to sample for generating/prerejecting a pose
+//    // align.setCorrespondenceRandomness (2); // Number of nearest features to use
+//    // align.setSimilarityThreshold (0.6f); // Polygonal edge length similarity threshold
+//    // align.setMaxCorrespondenceDistance (1.5f * leaf); // Set inlier threshold
+//    // align.setInlierFraction (0.25f); // Set required inlier fraction
+//    // align.align (*object_aligned);
+//
+//    pcl::PPFHashMapSearch::Ptr searcher(new pcl::PPFHashMapSearch);
+//    searcher->setInputFeatureCloud(object_features);
+//
+//    // Perform alignment
+//    pcl::console::print_highlight("Starting alignment...\n");
+//    pcl::PPFRegistration<PointNT, PointNT> align;
+//    align.setInputSource(object);
+//    // align.setSourceFeatures (object_features);
+//    align.setInputTarget(scene);
+//    align.setSearchMethod(searcher);
+//    // align.setTargetFeatures (scene_features);
+//    // align.setNumberOfSamples (3); // Number of points to sample for generating/prerejecting a pose
+//    // align.setCorrespondenceRandomness (2); // Number of nearest features to use
+//    // align.setSimilarityThreshold (0.6f); // Polygonal edge length similarity threshold
+//    // align.setMaxCorrespondenceDistance (1.5f * leaf); // Set inlier threshold
+//    // align.setInlierFraction (0.25f); // Set required inlier fraction
+//    align.align(*object_aligned);
+//
+//    if (align.hasConverged()) {
+//        // Print results
+//        Eigen::Matrix4f transformation = align.getFinalTransformation();
+//        pcl::console::print_info("    | %6.3f %6.3f %6.3f | \n",
+//                transformation(0, 0), transformation(0, 1),
+//                transformation(0, 2));
+//        pcl::console::print_info("R = | %6.3f %6.3f %6.3f | \n",
+//                transformation(1, 0), transformation(1, 1),
+//                transformation(1, 2));
+//        pcl::console::print_info("    | %6.3f %6.3f %6.3f | \n",
+//                transformation(2, 0), transformation(2, 1),
+//                transformation(2, 2));
+//        pcl::console::print_info("\n");
+//        pcl::console::print_info("t = < %0.3f, %0.3f, %0.3f >\n",
+//                transformation(0, 3), transformation(1, 3),
+//                transformation(2, 3));
+//        pcl::console::print_info("\n");
+//        // pcl::console::print_info ("Inliers: %i/%i\n", align.getInliers ().size (), object->size ());
+//
+//        // Show alignment
+//        pcl::visualization::PCLVisualizer visu("Alignment");
+//        visu.addPointCloud(scene, ColorHandlerT(scene, 0.0, 255.0, 0.0),
+//                "scene");
+//        visu.addPointCloud(object_aligned,
+//                ColorHandlerT(object_aligned, 0.0, 0.0, 255.0),
+//                "object_aligned");
+//        visu.spin();
+//    } else {
+//        pcl::console::print_error("Alignment failed!\n");
+//        return (1);
+//    }
 
     return (0);
 }

@@ -60,6 +60,13 @@ Model::~Model(){
 // TODO: finish
 void Model::ppf_lookup(Scene *scene){
 
+    #ifdef DEBUG
+        cudaEvent_t start, stop;
+        HANDLE_ERROR(cudaEventCreate(&start));
+        HANDLE_ERROR(cudaEventCreate(&stop));
+        HANDLE_ERROR(cudaEventRecord(start, 0));
+    #endif
+
     // find possible starting indices of blocks matching Model hashKeys
     thrust::device_vector<unsigned int> *sceneIndices =
         new thrust::device_vector<unsigned int>(scene->getModelPPFs()->size());
@@ -108,8 +115,6 @@ void Model::ppf_lookup(Scene *scene){
     // could create a vector of device_vectors on the host, but then
     // backing memory would be non-contiguous (only vector-wise
     // continuous).
-    thrust::device_vector<unsigned int> *accumulator =
-        new thrust::device_vector<unsigned int>(this->vecs->size()*n_angle);
 
     unsigned int num_bins = thrust::inner_product(vecs_old->begin(), vecs_old->end() - 1,
                                                   vecs_old->begin() + 1,
@@ -132,6 +137,9 @@ void Model::ppf_lookup(Scene *scene){
 
     // Step 5
     // Can almost represent this (and Step 4) as a reduction or transformation, but not quite.
+    thrust::device_vector<unsigned int> *accumulator =
+        new thrust::device_vector<unsigned int>(this->vecs->size()*n_angle);
+
     ppf_reduce_rows_kernel<<<this->vecs->size()/BLOCK_SIZE,BLOCK_SIZE>>>(RAW_PTR(this->vecs),
                                                                          RAW_PTR(this->vecCounts),
                                                                          RAW_PTR(this->firstVecIndex),
@@ -176,10 +184,22 @@ void Model::ppf_lookup(Scene *scene){
                                                                     scene->getModelPoints()->size(), RAW_PTR(this->transformations),
                                                                     this->vecs->size());
 
+    #ifdef DEBUG
+        // end cuda timer
+        HANDLE_ERROR(cudaEventRecord(stop, 0));
+        HANDLE_ERROR(cudaEventSynchronize(stop));
+        float elapsedTime;
+        HANDLE_ERROR(cudaEventElapsedTime(&elapsedTime, start, stop));
+        fprintf(stderr, "Time to lookup model:  %3.1f ms\n", elapsedTime);
+    #endif
 }
 
 void Model::accumulateVotes(){
     this->voteCodes = new thrust::device_vector<unsigned long>();
     this->voteCounts = new thrust::device_vector<unsigned int>();
     histogram(*(this->votes), *(this->voteCodes), *(this->voteCounts));
+}
+
+thrust::device_vector<float>* Model::getTransformations(){
+    return this->transformations;
 }

@@ -147,6 +147,77 @@ int ply_load_main(char *point_path, char *norm_path, int N, int devUse){
     return 0;
 }
 
+int ply_load_main(float3 *scenePoints, float3 *sceneNormals, int sceneN,
+                  float3 *objectPoints, float3 *objectNormals, int objectN,
+                  int devUse){
+    int numDevices;
+    cudaGetDeviceCount(&numDevices);
+    fprintf(stderr, "numDevices: %d\n", numDevices);
+    cudaDeviceProp prop;
+    for(int i = 0; i < numDevices; i++){
+        cudaGetDeviceProperties(&prop, i);
+        fprintf(stderr, "%d) name: %s\n", i, prop.name);
+    }
+    cudaSetDevice(devUse);
+    int devNum;
+    cudaGetDevice(&devNum);
+    HANDLE_ERROR(cudaGetDeviceProperties(&prop, devNum));
+    fprintf(stderr, "Using device %d, %s: \n", devNum, prop.name);
+
+    thrust::host_vector<float3> *scenePointsVec =
+            new thrust::host_vector<float3>(scenePoints, scenePoints+sceneN);
+    thrust::host_vector<float3> *sceneNormsVec =
+            new thrust::host_vector<float3>(sceneNormals, sceneNormals+sceneN);
+    thrust::host_vector<float3> *objectPointsVec =
+            new thrust::host_vector<float3>(objectPoints, objectPoints+objectN);
+    thrust::host_vector<float3> *objectNormsVec =
+            new thrust::host_vector<float3>(objectNormals, objectNormals+objectN);
+
+    free(scenePoints);
+    free(sceneNormals);
+    free(objectPoints);
+    free(objectNormals);
+
+    // cuda setup
+    int blocks = prop.multiProcessorCount;
+    /* DEBUG */
+    fprintf(stderr, "blocks: %d\n", blocks);
+    /* DEBUG */
+
+    // build model description
+    Model *model = new Model(objectPointsVec, objectNormsVec, objectN);
+    Scene *scene = new Scene(scenePointsVec, sceneNormsVec, sceneN);
+
+    model->ppf_lookup(scene);
+
+//    // copy ppfs back to host
+    thrust::host_vector<float> *transformations = new thrust::host_vector<float>(*model->getTransformations());
+//
+    // write out transformations
+    for (int i=0; i<transformations->size()/16; i++){
+        cout << "Transformtion[" << i << "]" << endl;
+        for (int j=0; j<4; j++){
+            for (int k=0; k<4; k++){
+                cout << (*transformations)[i*16+j*4+k] << " ";
+            }
+            cout << endl;
+        }
+        cout << endl << endl;
+    }
+
+    // Deallocate ram
+//    delete points;
+//    delete norms;
+//    delete ppfs;
+
+    delete model;
+    delete scene;
+
+    cudaDeviceReset();
+
+    return 0;
+}
+
 // int ppf_run(Eigen::MatrixXf &points, Eigen::MatrixXf &normals){
 //     float *point_data = points.data();
 //     float *normal_data = normals.data();
