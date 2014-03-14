@@ -212,12 +212,14 @@ __device__ void invht(float T[4][4], float T_inv[4][4]){
 __device__ void trans_model_scene(float3 m_r, float3 n_r_m, float3 m_i,
                                   float3 s_r, float3 n_r_s, float3 s_i,
                                   float d_dist, float3 &trans_vec,
-                                  unsigned int &alpha){
+                                  unsigned int &alpha_idx){
     float transm[4][4], rot_x[4][4], rot_y[4][4], rot_z[4][4], T_tmp[4][4], T_m_g[4][4], T_s_g[4][4],
     T_tmp2[4][4], T[4][4];
     float4 n_tmp;
+    float3 s_r_transformed;
 
-    m_r = discretize(m_r, d_dist);
+    // probably not necessary due to PCL resampling onto voxel grid
+    // m_r = discretize(m_r, d_dist);
     m_r = times(-1, m_r);
 
     trans(m_r, transm);
@@ -248,8 +250,8 @@ __device__ void trans_model_scene(float3 m_r, float3 n_r_m, float3 m_i,
 
     u.x = 0;
     v.x = 0;
-    float alpha_tmp = atan2f(cross(u, v).x, dot(u, v));
-    alpha = (int) roundf((alpha_tmp / (2*CUDART_PI_F) ) * (n_angle - 1));
+    float alpha = atan2f(cross(u, v).x, dot(u, v));
+    alpha_idx = (int) roundf((alpha / (2*CUDART_PI_F) ) * (n_angle - 1));
     rotx(alpha, rot_x);
 
     invht(T_s_g, T_tmp);
@@ -257,16 +259,10 @@ __device__ void trans_model_scene(float3 m_r, float3 n_r_m, float3 m_i,
     mat4f_mul(T_tmp2, T_m_g, T);
     // T is T_ms
 
-    invht(T, T_tmp);
-    // T_tmp is T_sm
-
-    n_tmp = mat4f_vmul(T_tmp, homogenize(s_r));
-    // n_tmp is the scene point in model frame
-   n_tmp.x += T[0][3];
-   n_tmp.y += T[1][3];
-   n_tmp.z += T[2][3];
-
-    trans_vec = minus(dehomogenize(n_tmp), m_r);
+    trans_vec.x = T[0][3];
+    trans_vec.y = T[1][3];
+    trans_vec.z = T[2][3];
+    trans_vec = discretize(trans_vec, d_dist);
 }
 
 __device__ void compute_rot_angles(float3 n_r_m, float3 n_r_s,
@@ -402,22 +398,27 @@ __global__ void ppf_vote_kernel(unsigned int *sceneKeys, unsigned int *sceneIndi
 
     int ind = threadIdx.x;
     int idx = ind + blockIdx.x * blockDim.x;
-    unsigned int alpha;
+    unsigned int alpha_idx;
     float3 trans_vec;
 
     if(idx < count){
         unsigned int thisSceneKey = sceneKeys[idx];
         unsigned int thisSceneIndex = sceneIndices[idx];
-        float3 thisScenePoint = scenePoints[idx];
-        float3 thisSceneNormal = sceneNormals[idx];
         if (thisSceneKey != hashKeys[thisSceneIndex]){
             return;
         }
         unsigned int thisPPFCount = ppfCount[thisSceneIndex];
         unsigned int thisFirstPPFIndex = firstPPFIndex[thisSceneIndex];
 
+        unsigned int scene_r_index = idx / sceneSize;
+        // John says % is slow on GPU
+        unsigned int scene_i_index = idx % sceneSize;
+        float3 scene_r_point = scenePoints[scene_r_index];
+        float3 scene_r_norm = sceneNormals[scene_r_index];
+        float3 scene_i_point = scenePoints[scene_i_index];
+
         unsigned int modelPPFIndex, model_r_index, model_i_index;
-        float3 model_r_point, model_r_norm, model_i_point, scene_i_point;
+        float3 model_r_point, model_r_norm, model_i_point;
         for(int i = 0; i < thisPPFCount; i++){
             modelPPFIndex = key2ppfMap[thisFirstPPFIndex+i];
             model_r_index = modelPPFIndex / modelSize;
@@ -427,32 +428,26 @@ __global__ void ppf_vote_kernel(unsigned int *sceneKeys, unsigned int *sceneIndi
             model_r_norm = modelNormals[model_r_index];
             model_i_point = modelPoints[model_i_index];
 
-             for(int j = 0; j < sceneSize; j++){
-                 scene_i_point = scenePoints[j];
-                 trans_model_scene(model_r_point, model_r_norm, model_i_point,
-                                   thisScenePoint, thisSceneNormal, scene_i_point,
-                                   d_dist, trans_vec, alpha);
-                 votes[idx + j] = (((unsigned long)idx) << 32) | (model_r_index << 6) | (alpha);
-                 // votes[idx + j] = (alpha << 58) | (model_r_index << 32) | ((unsigned long)idx);
-                 // begin step 2 of algorithm here
-                 // either give up vector row locality and use hashes for faster sorting of unsigned longs
-                 // or stash trans vec and index into a float4 and sort array of float4
-                 vecs_old[idx + j] = trans_vec;
-             }
+            trans_model_scene(model_r_point, model_r_norm, model_i_point,
+                              scene_r_point, scene_r_norm, scene_i_point,
+                              d_dist, trans_vec, alpha_idx);
+            votes[idx + i] = (((unsigned long) scene_r_index) << 32) | (model_r_index << 6) | (alpha_idx);
+            // begin step 2 of algorithm here
+            vecs_old[idx + i] = trans_vec;
         }
     }
 }
 
 /*
-  for vec in unique_vecs:
+  for(int i = 0; i < unique_vecs.size(); i++){
     int angle_histogram[32];
-    for index in vec:
-      voteCode = voteCodes[index]
-      voteCount = voteCounts[index]
-      thisSceneRefPt;
-      thisModelPt;
-      thisAngle;
-      angle_histogram[angle_index] += voteCount;
+    // do this in parallel, so atomics should be used
+    for(int j = 0; j < vecCounts[i]; j++){
+      voteCode = votes[firstVoteIndex[i] + j];
+      angle_idx = voteCode & low6;
+      angle_histogram[angle_idx]++;
+      
+    }
  */
 
 // TODO: increase thread work
