@@ -13,7 +13,7 @@
 __const__ int n_angle = 32;
 __const__ float d_angle = 2*CUDART_PI_F/n_angle;
 __const__ float d_dist = 0.05;
-__const__ float score_threshold = 0.8;
+__const__ float score_threshold = 0;
 
 __device__ unsigned int hash(void *f, int n);
 __device__ __forceinline__ float dot(float3 v1, float3 v2);
@@ -75,25 +75,22 @@ __global__ void ppf_vote_kernel(unsigned int *sceneKeys, unsigned int *sceneIndi
 
 __global__ void ppf_reduce_rows_kernel(float3 *vecs, unsigned int *vecCounts,
                                        unsigned int *firstVecIndex,
-                                       unsigned int *key2VecMap,
-                                       unsigned long *voteCodes,
-                                       unsigned int *voteCounts,
+                                       unsigned long *votes,
                                        int n_angle,
                                        unsigned int *accumulator,
                                        int count);
 
 __global__ void ppf_score_kernel(unsigned int *accumulator,
                                  unsigned int *maxidx,
-                                 int n_angle, float threshold,
+                                 int n_angle, int threshold,
                                  unsigned int *scores,
                                  int count);
 
 __global__ void trans_calc_kernel(float3 *vecs, unsigned int *vecCounts,
-                                  unsigned int *firstVecIndex, unsigned int *vec2VoteMap,
-                                  unsigned int *maxidx, unsigned long *votes, int n_angle,
-                                  float3 *model_points, float3 *model_normals,
-                                  float3 *scene_points, float3 *scene_normals,
-                                  int model_size, int scene_size,
+                                  unsigned int *firstVecIndex, unsigned long *votes,
+                                  unsigned int *maxidx, unsigned int *scores, int n_angle,
+                                  float3 *model_points, float3 *model_normals, int model_size,
+                                  float3 *scene_points, float3 *scene_normals, int scene_size,
                                   float *transforms, int count);
 
 #endif /* __KERNEL_H */

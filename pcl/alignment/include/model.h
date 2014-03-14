@@ -61,7 +61,7 @@ class Model : public Scene {
         // firstVecIndex[i] is the index of the first entry in vecCodes
         // corresponding to votes[i]. The following vecCounts[i]-1
         // entries also correspond to vecCodes[i].
-        thrust::device_vector<unsigned int> *firstVoteIndex;
+        thrust::device_vector<unsigned int> *firstVecIndex;
 
         // transformations stores 4 by 4 arrays of transformation matrices
         // however it uses linear indexing

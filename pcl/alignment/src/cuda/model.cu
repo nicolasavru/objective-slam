@@ -46,6 +46,23 @@ Model::Model(thrust::host_vector<float3> *points, thrust::host_vector<float3> *n
     this->votes = NULL;
     this->voteCodes = NULL;
     this->voteCounts = NULL;
+
+    {
+        using namespace std;
+        std::cerr << std::endl;
+        for (int i=0; i<hashKeys->size(); i++){
+            std::cerr << (*hashKeys)[i] << std::endl;
+        }
+//        std::cerr << std::endl;
+//        for (int i=0; i<modelPoints->size() % 100; i++){
+//            std::cerr << (*modelPoints)[i] << std::endl;
+//        }
+//        std::cerr << std::endl;
+//        for (int i=0; i<modelNormals->size() % 100; i++){
+//            std::cerr << (*modelNormals)[i] << std::endl;
+//        }
+        std::cerr << modelPPFs->size() << endl;
+    }
 }
 // TODO: Deallocate memory for things not here yet
 Model::~Model(){
@@ -78,9 +95,13 @@ void Model::ppf_lookup(Scene *scene){
 
     // Steps 1-3
     // launch voting kernel instance for each scene reference point
+    unsigned int lastIndex, lastCount;
+    cudaMemcpy(&lastIndex, thrust::raw_pointer_cast(this->firstPPFIndex->data()+this->firstPPFIndex->size()-1),
+               sizeof(unsigned int), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&lastCount, thrust::raw_pointer_cast(this->ppfCount->data()+this->ppfCount->size()-1),
+               sizeof(unsigned int), cudaMemcpyDeviceToHost);
     this->votes = new thrust::device_vector<unsigned long>(scene->getModelPPFs()->size()*
-                                                           (*(this->firstPPFIndex->end()) +
-                                                            *(this->ppfCount->end())));
+                                                           (lastIndex + lastCount));
 
     // vecs_old is an array of (soon to be) sorted translation vectors
     thrust::device_vector<float3> *vecs_old =
@@ -102,10 +123,10 @@ void Model::ppf_lookup(Scene *scene){
     this->vecs = new thrust::device_vector<float3>();
     this->vecCounts = new thrust::device_vector<unsigned int>();
     histogram_destructive(*vecs_old, *(this->vecs), *(this->vecCounts));
-    this->firstVoteIndex = new thrust::device_vector<unsigned int>(this->vecs->size());
+    this->firstVecIndex = new thrust::device_vector<unsigned int>(this->vecs->size());
     thrust::exclusive_scan(this->vecCounts->begin(),
                            this->vecCounts->end(),
-                           this->firstVoteIndex->begin());
+                           this->firstVecIndex->begin());
     // votes is sorted by vecs!!
 
 
@@ -157,15 +178,13 @@ void Model::ppf_lookup(Scene *scene){
     thrust::device_vector<unsigned int> *accumulator =
         new thrust::device_vector<unsigned int>(this->vecs->size()*n_angle);
 
-    // ppf_reduce_rows_kernel<<<this->vecs->size()/BLOCK_SIZE,BLOCK_SIZE>>>(RAW_PTR(this->vecs),
-    //                                                                      RAW_PTR(this->vecCounts),
-    //                                                                      RAW_PTR(this->firstVecIndex),
-    //                                                                      RAW_PTR(this->vec2VoteMap),
-    //                                                                      RAW_PTR(this->voteCodes),
-    //                                                                      RAW_PTR(this->voteCounts),
-    //                                                                      n_angle,
-    //                                                                      RAW_PTR(accumulator),
-    //                                                                      this->vecs->size());
+     ppf_reduce_rows_kernel<<<this->vecs->size()/BLOCK_SIZE,BLOCK_SIZE>>>(RAW_PTR(this->vecs),
+                                                                          RAW_PTR(this->vecCounts),
+                                                                          RAW_PTR(this->firstVecIndex),
+                                                                          RAW_PTR(this->votes),
+                                                                          n_angle,
+                                                                          RAW_PTR(accumulator),
+                                                                          this->vecs->size());
 
     // Steps 6, 7
     thrust::device_vector<unsigned int> *maxidx =
@@ -182,24 +201,19 @@ void Model::ppf_lookup(Scene *scene){
 
     // Step 8, 9
     // call trans_calc_kernel
-//    __global__ void trans_calc_kernel(float *vecs, unsigned int *vecCounts,
-//                                      unsigned int *firstVecIndex, unsigned int *vec2VoteMap,
-//                                      unsigned int *maxidx, unsigned long *votes, int n_angle,
-//                                      float3 *model_points, float3 *model_normals,
-//                                      float3 *scene_points, float3 *scene_normals,
-//                                      int model_size, float *transforms,
-//                                      int count);
-
     this->transformations = new thrust::device_vector<float>(this->vecs->size()*16);
 
-    // trans_calc_kernel<<<this->vecs->size()/BLOCK_SIZE,BLOCK_SIZE>>>(RAW_PTR(this->vecs), RAW_PTR(this->vecCounts),
-    //                                                                 RAW_PTR(this->firstVoteIndex), RAW_PTR(this->vec2VoteMap),
-    //                                                                 RAW_PTR(maxidx), RAW_PTR(this->votes),
-    //                                                                 n_angle, RAW_PTR(this->modelPoints),
-    //                                                                 RAW_PTR(this->modelNormals), RAW_PTR(scene->getModelPoints()),
-    //                                                                 RAW_PTR(scene->getModelNormals()), this->modelPoints->size(),
-    //                                                                 scene->getModelPoints()->size(), RAW_PTR(this->transformations),
-    //                                                                 this->vecs->size());
+     trans_calc_kernel<<<this->vecs->size()/BLOCK_SIZE,BLOCK_SIZE>>>
+             (RAW_PTR(this->vecs), RAW_PTR(this->vecCounts),
+                     RAW_PTR(this->firstVecIndex), RAW_PTR(this->votes),
+                     RAW_PTR(maxidx), RAW_PTR(scores),
+                     n_angle,
+                     RAW_PTR(this->modelPoints), RAW_PTR(this->modelNormals),
+                     this->modelPoints->size(),
+                     RAW_PTR(scene->getModelPoints()), RAW_PTR(scene->getModelNormals()),
+                     scene->getModelPoints()->size(),
+                     RAW_PTR(this->transformations),
+                     this->vecs->size());
 
     #ifdef DEBUG
         {

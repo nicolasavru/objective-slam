@@ -262,6 +262,7 @@ __device__ void trans_model_scene(float3 m_r, float3 n_r_m, float3 m_i,
     trans_vec.x = T[0][3];
     trans_vec.y = T[1][3];
     trans_vec.z = T[2][3];
+    //think about discretization size and smoothing...
     trans_vec = discretize(trans_vec, d_dist);
 }
 
@@ -411,10 +412,9 @@ __global__ void ppf_vote_kernel(unsigned int *sceneKeys, unsigned int *sceneIndi
         unsigned int thisFirstPPFIndex = firstPPFIndex[thisSceneIndex];
 
         unsigned int scene_r_index = idx / sceneSize;
-        // John says % is slow on GPU
-        unsigned int scene_i_index = idx % sceneSize;
+        unsigned int scene_i_index = scene_r_index + (idx - scene_r_index*sceneSize);
         float3 scene_r_point = scenePoints[scene_r_index];
-        float3 scene_r_norm = sceneNormals[scene_r_index];
+        float3 scene_r_norm  = sceneNormals[scene_r_index];
         float3 scene_i_point = scenePoints[scene_i_index];
 
         unsigned int modelPPFIndex, model_r_index, model_i_index;
@@ -422,10 +422,10 @@ __global__ void ppf_vote_kernel(unsigned int *sceneKeys, unsigned int *sceneIndi
         for(int i = 0; i < thisPPFCount; i++){
             modelPPFIndex = key2ppfMap[thisFirstPPFIndex+i];
             model_r_index = modelPPFIndex / modelSize;
-            model_i_index = modelPPFIndex % modelSize;
+            model_i_index = model_r_index + (modelPPFIndex - model_r_index*modelSize);
 
             model_r_point = modelPoints[model_r_index];
-            model_r_norm = modelNormals[model_r_index];
+            model_r_norm  = modelNormals[model_r_index];
             model_i_point = modelPoints[model_i_index];
 
             trans_model_scene(model_r_point, model_r_norm, model_i_point,
@@ -451,12 +451,9 @@ __global__ void ppf_vote_kernel(unsigned int *sceneKeys, unsigned int *sceneIndi
  */
 
 // TODO: increase thread work
-// TODO: thisVec unused
 __global__ void ppf_reduce_rows_kernel(float3 *vecs, unsigned int *vecCounts,
                                        unsigned int *firstVecIndex,
-                                       unsigned int *key2VecMap,
-                                       unsigned long *voteCodes,
-                                       unsigned int *voteCounts,
+                                       unsigned long *votes,
                                        int n_angle,
                                        unsigned int *accumulator,
                                        int count){
@@ -467,7 +464,7 @@ __global__ void ppf_reduce_rows_kernel(float3 *vecs, unsigned int *vecCounts,
     float3 thisVec;
     unsigned int thisVecCount, thisVecIndex;
     int angle_idx;
-    unsigned int voteCode, voteCount;
+    unsigned int vote;
 
     unsigned long low6 = ((unsigned long) -1) >> 58;
 
@@ -475,12 +472,11 @@ __global__ void ppf_reduce_rows_kernel(float3 *vecs, unsigned int *vecCounts,
         thisVec = vecs[idx];
         thisVecCount = vecCounts[idx];
         thisVecIndex = firstVecIndex[idx];
-        memset(accumulator+idx, 0, n_angle*sizeof(unsigned int));
+        memset(accumulator+idx*n_angle, 0, n_angle*sizeof(unsigned int));
         for(int i = 0; i < thisVecCount; i++){
-            voteCode = voteCodes[thisVecIndex+i];
-            voteCount = voteCounts[thisVecIndex+i];
-            angle_idx = voteCode & low6;
-            accumulator[idx+angle_idx] += voteCount;
+            vote      = votes[thisVecIndex+i];
+            angle_idx = vote & low6;
+            accumulator[idx+angle_idx]++;
         }
     }
 }
@@ -488,7 +484,7 @@ __global__ void ppf_reduce_rows_kernel(float3 *vecs, unsigned int *vecCounts,
 // TODO: increase thread work
 __global__ void ppf_score_kernel(unsigned int *accumulator,
                                  unsigned int *maxidx,
-                                 int n_angle, float threshold,
+                                 int n_angle, int threshold,
                                  unsigned int *scores,
                                  int count){
     if(count <= 1) return;
@@ -519,11 +515,10 @@ __global__ void ppf_score_kernel(unsigned int *accumulator,
 
 // TODO: increase thread work
 __global__ void trans_calc_kernel(float3 *vecs, unsigned int *vecCounts,
-                                  unsigned int *firstVecIndex, unsigned int *vec2VoteMap,
-                                  unsigned int *maxidx, unsigned long *votes, int n_angle,
-                                  float3 *model_points, float3 *model_normals,
-                                  float3 *scene_points, float3 *scene_normals,
-                                  int model_size, int scene_size,
+                                  unsigned int *firstVecIndex, unsigned long *votes,
+                                  unsigned int *maxidx, unsigned int *scores, int n_angle,
+                                  float3 *model_points, float3 *model_normals, int model_size,
+                                  float3 *scene_points, float3 *scene_normals, int scene_size,
                                   float *transforms, int count){
     if(count <= 1) return;
 
@@ -535,27 +530,26 @@ __global__ void trans_calc_kernel(float3 *vecs, unsigned int *vecCounts,
 
     unsigned long low6 = ((unsigned long) -1) >> 58;
     unsigned long hi32 = ((unsigned long) -1) << 32;
+    unsigned long model_point_mask = ((unsigned long) -1) ^ hi32 ^ low6;
     float m_roty_t, m_rotz_t, s_roty_t, s_rotz_t;
 
+    // angle average accumulators
     float m_roty = 0;
     float m_rotz = 0;
     float s_roty = 0;
     float s_rotz = 0;
-
 
     if(idx < count){
         thisVecCount = vecCounts[idx];
         thisFirstVecIndex = firstVecIndex[idx];
 
         for(int i = 0; i < thisVecCount; i++){
-            vote = votes[vec2VoteMap[thisFirstVecIndex+i]];
+            vote = votes[thisFirstVecIndex+i];
             angle_idx = (unsigned int) (vote & low6);
             if(((int) fabsf(angle_idx - maxidx[idx])) > 1) continue;
 
             scene_point_idx = (unsigned int) ((vote & hi32) >> 32);
-            scene_point_idx /= scene_size;
-            model_point_idx = (unsigned int) (vote & low6);
-            model_point_idx /= model_size;
+            model_point_idx = (unsigned int) ((vote & model_point_mask) >> 6);
             compute_rot_angles(model_normals[model_point_idx],
                                scene_normals[scene_point_idx],
                                &m_roty_t, &m_rotz_t, &s_roty_t, &s_rotz_t);
@@ -569,11 +563,7 @@ __global__ void trans_calc_kernel(float3 *vecs, unsigned int *vecCounts,
 
         compute_transforms(angle_idx, model_points[model_point_idx],
                            m_roty, m_rotz,
-                           scene_points[scene_point_idx], s_roty,
-                           s_rotz, ((float (*)[4]) transforms + idx*16));
-
-
-
-
+                           scene_points[scene_point_idx],
+                           s_roty, s_rotz, ((float (*)[4]) transforms + idx*16));
     }
 }
