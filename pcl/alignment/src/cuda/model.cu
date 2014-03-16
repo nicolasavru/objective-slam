@@ -127,7 +127,7 @@ void Model::ppf_lookup(Scene *scene){
 
         thrust::host_vector<float3> *hah = new thrust::host_vector<float3>(*vecs_old);
         cout << "vecs_old" << endl;
-        for(int i = 0; i < hah->size(); i++){
+        for(int i = 0; i < 20; i++){
             if((*hah)[i].y > 0){
                 cout << i << ", " << (*hah)[i] << endl;
             }

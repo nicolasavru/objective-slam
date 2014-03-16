@@ -433,9 +433,10 @@ __global__ void ppf_vote_kernel(unsigned int *sceneKeys, unsigned int *sceneIndi
             trans_model_scene(model_r_point, model_r_norm, model_i_point,
                               scene_r_point, scene_r_norm, scene_i_point,
                               d_dist, trans_vec, alpha_idx);
-            votes[idx + i] = (((unsigned long) scene_r_index) << 32) | (model_r_index << 6) | (alpha_idx);
+            votes[thisFirstPPFIndex + i] =
+                (((unsigned long) scene_r_index) << 32) | (model_r_index << 6) | (alpha_idx);
             // begin step 2 of algorithm here
-            vecs_old[idx + i] = trans_vec;
+            vecs_old[thisFirstPPFIndex + i] = trans_vec;
         }
 
         idx += blockDim.x * gridDim.x;
