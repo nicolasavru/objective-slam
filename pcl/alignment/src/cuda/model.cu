@@ -26,9 +26,33 @@ Model::Model(thrust::host_vector<float3> *points, thrust::host_vector<float3> *n
         new thrust::device_vector<unsigned int>(this->modelPPFs->size());
 
     // for each ppf, compute a 32-bit hash
-    ppf_hash_kernel<<<this->modelPPFs->size()/BLOCK_SIZE,BLOCK_SIZE>>>(RAW_PTR(this->modelPPFs),
-                                                                       RAW_PTR(hashKeys_old),
-                                                                       this->modelPPFs->size());
+    ppf_hash_kernel<<<32768/BLOCK_SIZE,BLOCK_SIZE>>>(RAW_PTR(this->modelPPFs),
+                                                     RAW_PTR(hashKeys_old),
+                                                     this->modelPPFs->size());
+// #ifdef DEBUG
+//     {
+//         using namespace std;
+//         /* DEBUG */
+//         fprintf(stderr, "%d, %d\n", this->modelPPFs->size(), this->modelPPFs->size()/BLOCK_SIZE);
+//         /* DEBUG */
+
+//         thrust::host_vector<float4> *ppfs = new thrust::host_vector<float4>(*(this->modelPPFs));
+//         for(int i = 0; i < 20; i++){
+//             cout << "PPF Number: " << i << endl;
+//             cout << (*ppfs)[i].x << endl;
+//             cout << (*ppfs)[i].y << endl;
+//             cout << (*ppfs)[i].z << endl;
+//             cout << (*ppfs)[i].w << endl;
+//         }
+
+//         thrust::host_vector<unsigned int> *hah = new thrust::host_vector<unsigned int>(*hashKeys_old);
+//         cout << "hashKeys_old" << endl;
+//         for(int i = 0; i < 20; i++){
+//             cout << (*hah)[i] << endl;
+//         }
+//     }
+// #endif
+
     thrust::sort_by_key(hashKeys_old->begin(), hashKeys_old->end(), key2ppfMap->begin());
 
     this->hashKeys = new thrust::device_vector<unsigned int>();
@@ -47,22 +71,6 @@ Model::Model(thrust::host_vector<float3> *points, thrust::host_vector<float3> *n
     this->voteCodes = NULL;
     this->voteCounts = NULL;
 
-    {
-        using namespace std;
-        std::cerr << std::endl;
-        for (int i=0; i<hashKeys->size(); i++){
-            std::cerr << (*hashKeys)[i] << std::endl;
-        }
-//        std::cerr << std::endl;
-//        for (int i=0; i<modelPoints->size() % 100; i++){
-//            std::cerr << (*modelPoints)[i] << std::endl;
-//        }
-//        std::cerr << std::endl;
-//        for (int i=0; i<modelNormals->size() % 100; i++){
-//            std::cerr << (*modelNormals)[i] << std::endl;
-//        }
-        std::cerr << modelPPFs->size() << endl;
-    }
 }
 // TODO: Deallocate memory for things not here yet
 Model::~Model(){
@@ -96,19 +104,14 @@ void Model::ppf_lookup(Scene *scene){
     // Steps 1-3
     // launch voting kernel instance for each scene reference point
     unsigned int lastIndex, lastCount;
-    cudaMemcpy(&lastIndex, thrust::raw_pointer_cast(this->firstPPFIndex->data()+this->firstPPFIndex->size()-1),
-               sizeof(unsigned int), cudaMemcpyDeviceToHost);
-    cudaMemcpy(&lastCount, thrust::raw_pointer_cast(this->ppfCount->data()+this->ppfCount->size()-1),
-               sizeof(unsigned int), cudaMemcpyDeviceToHost);
-    this->votes = new thrust::device_vector<unsigned long>(scene->getModelPPFs()->size()*
-                                                           (lastIndex + lastCount));
+    this->votes = new thrust::device_vector<unsigned long>(scene->getModelPPFs()->size());
 
     // vecs_old is an array of (soon to be) sorted translation vectors
     thrust::device_vector<float3> *vecs_old =
-        new thrust::device_vector<float3>(this->modelPPFs->size());
+        new thrust::device_vector<float3>(scene->getModelPPFs()->size());
 
     // populates parallel arrays votes and vecs_old
-    ppf_vote_kernel<<<scene->getHashKeys()->size()/BLOCK_SIZE,BLOCK_SIZE>>>
+    ppf_vote_kernel<<<32768,BLOCK_SIZE>>>
         (RAW_PTR(scene->getHashKeys()), RAW_PTR(sceneIndices),
          RAW_PTR(this->hashKeys), RAW_PTR(this->ppfCount),
          RAW_PTR(this->firstPPFIndex), RAW_PTR(this->key2ppfMap),
@@ -118,6 +121,19 @@ void Model::ppf_lookup(Scene *scene){
          RAW_PTR(this->votes), RAW_PTR(vecs_old),
          scene->getHashKeys()->size());
 
+#ifdef DEBUG
+    {
+        using namespace std;
+
+        thrust::host_vector<float3> *hah = new thrust::host_vector<float3>(*vecs_old);
+        cout << "vecs_old" << endl;
+        for(int i = 0; i < hah->size(); i++){
+            if((*hah)[i].y > 0){
+                cout << i << ", " << (*hah)[i] << endl;
+            }
+        }
+    }
+#endif
 
     thrust::sort_by_key(vecs_old->begin(), vecs_old->end(), votes->begin());
     this->vecs = new thrust::device_vector<float3>();
@@ -225,18 +241,18 @@ void Model::ppf_lookup(Scene *scene){
             for (int i=0; i<accumulator->size(); i++){
                 std::cerr << (*accumulator)[i] << std::endl;
             }
-            std::cerr << std::endl;
-            for (int i=0; i<vecs->size(); i++){
-                std::cerr << (*vecs)[i] << std::endl;
-            }
+            // std::cerr << std::endl;
+            // for (int i=0; i<vecs->size(); i++){
+            //     std::cerr << (*vecs)[i] << std::endl;
+            // }
 //            std::cerr << std::endl;
 //            for (int i=0; i<votes->size(); i++){
 //                std::cerr << (*votes)[i] << std::endl;
 //            }
-            std::cerr << std::endl;
-            for (int i=0; i<hashKeys->size(); i++){
-                std::cerr << (*hashKeys)[i] << std::endl;
-            }
+            // std::cerr << std::endl;
+            // for (int i=0; i<hashKeys->size(); i++){
+            //     std::cerr << (*hashKeys)[i] << std::endl;
+            // }
 //            std::cerr << std::endl;
 //            for (int i=0; i<modelPPFs->size(); i++){
 //                std::cerr << (*modelPPFs)[i] << std::endl;

@@ -351,8 +351,10 @@ __global__ void ppf_hash_kernel(float4 *ppfs, unsigned int *codes, int count){
     int ind = threadIdx.x;
     int idx = ind + blockIdx.x * blockDim.x;
 
-    if(idx < count){
+    while(idx < count){
         codes[idx] = hash(ppfs+idx, sizeof(float4));
+
+        idx += blockDim.x * gridDim.x;
     }
 }
 
@@ -402,7 +404,7 @@ __global__ void ppf_vote_kernel(unsigned int *sceneKeys, unsigned int *sceneIndi
     unsigned int alpha_idx;
     float3 trans_vec;
 
-    if(idx < count){
+    while(idx < count){
         unsigned int thisSceneKey = sceneKeys[idx];
         unsigned int thisSceneIndex = sceneIndices[idx];
         if (thisSceneKey != hashKeys[thisSceneIndex]){
@@ -435,6 +437,8 @@ __global__ void ppf_vote_kernel(unsigned int *sceneKeys, unsigned int *sceneIndi
             // begin step 2 of algorithm here
             vecs_old[idx + i] = trans_vec;
         }
+
+        idx += blockDim.x * gridDim.x;
     }
 }
 

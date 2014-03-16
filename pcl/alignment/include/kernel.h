@@ -8,7 +8,7 @@
 
 #include "debug.h"
 
-#define BLOCK_SIZE 256
+#define BLOCK_SIZE 512
 
 __const__ int n_angle = 32;
 __const__ float d_angle = 2*CUDART_PI_F/n_angle;
