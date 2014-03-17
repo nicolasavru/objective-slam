@@ -12,7 +12,7 @@
 
 __const__ int n_angle = 32;
 __const__ float d_angle = 2*CUDART_PI_F/n_angle;
-__const__ float d_dist = 0.05;
+__const__ float d_dist = 0.1;
 __const__ float score_threshold = 0;
 
 __device__ unsigned int hash(void *f, int n);

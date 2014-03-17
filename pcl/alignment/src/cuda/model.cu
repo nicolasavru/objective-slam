@@ -233,14 +233,14 @@ void Model::ppf_lookup(Scene *scene){
 
     #ifdef DEBUG
         {
-            using namespace std;
-            for (int i=0; i<maxidx->size(); i++){
-                std::cerr << (*maxidx)[i] << std::endl;
-            }
-            std::cerr << std::endl;
-            for (int i=0; i<accumulator->size(); i++){
-                std::cerr << (*accumulator)[i] << std::endl;
-            }
+            // using namespace std;
+            // for (int i=0; i<maxidx->size(); i++){
+            //     std::cerr << (*maxidx)[i] << std::endl;
+            // }
+            // std::cerr << std::endl;
+            // for (int i=0; i<accumulator->size(); i++){
+            //     std::cerr << (*accumulator)[i] << std::endl;
+            // }
             // std::cerr << std::endl;
             // for (int i=0; i<vecs->size(); i++){
             //     std::cerr << (*vecs)[i] << std::endl;

@@ -70,7 +70,7 @@ int main(int argc, char **argv){
     // Downsample
     pcl::console::print_highlight("Downsampling...\n");
     pcl::VoxelGrid<PointNT> grid;
-    float leaf = 0.01f;
+    float leaf = 0.02f;
     grid.setLeafSize(leaf, leaf, leaf);
     std::cerr << "object before filtering: " << object->width * object->height
             << " data points (" << pcl::getFieldsList(*object) << ")."
@@ -80,7 +80,7 @@ int main(int argc, char **argv){
     std::cerr << "object after filtering: " << object->width * object->height
             << " data points (" << pcl::getFieldsList(*object) << ")."
             << std::endl;
-    leaf = 0.02f;
+    leaf = 0.04f;
     grid.setLeafSize(leaf, leaf, leaf);
     std::cerr << "scene before filtering: " << scene->width * scene->height
             << " data points (" << pcl::getFieldsList(*scene) << ")."
