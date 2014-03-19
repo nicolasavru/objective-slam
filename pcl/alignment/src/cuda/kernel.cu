@@ -328,17 +328,16 @@ __global__ void ppf_kernel(float3 *points, float3 *norms, float4 *out, int count
         float3 thisPoint = points[idx];
         float3 thisNorm  = norms[idx];
 
-        for(int i = 0; i < count/BLOCK_SIZE; i++){
+        for(int i = 0; i < count; i+=BLOCK_SIZE){
 
-            Spoints[ind] = points[i*BLOCK_SIZE+ind];
-            Snorms[ind]  = norms[i*BLOCK_SIZE+ind];
+            Spoints[ind] = points[i+ind];
+            Snorms[ind]  = norms[i+ind];
             __syncthreads();
 
             for(int j = 0; j < BLOCK_SIZE; j++) {
-                if((idx*count + j + i*BLOCK_SIZE) % (count+1) == 0) continue;
-                out[idx*count + j + i*BLOCK_SIZE] = compute_ppf(thisPoint, thisNorm, Spoints[j], Snorms[j]);
-                out[idx*count + j + i*BLOCK_SIZE] = disc_feature(out[idx*count + j + i*BLOCK_SIZE],
-                                                                 d_dist, d_angle);
+                if((j + i - idx) == 0) continue;
+                out[idx*count + j + i] = compute_ppf(thisPoint, thisNorm, Spoints[j], Snorms[j]);
+                out[idx*count + j + i] = disc_feature(out[idx*count + j + i], d_dist, d_angle);
             }
         }
     }
@@ -414,7 +413,7 @@ __global__ void ppf_vote_kernel(unsigned int *sceneKeys, unsigned int *sceneIndi
         unsigned int thisFirstPPFIndex = firstPPFIndex[thisSceneIndex];
 
         unsigned int scene_r_index = idx / sceneSize;
-        unsigned int scene_i_index = scene_r_index + (idx - scene_r_index*sceneSize);
+        unsigned int scene_i_index = idx - scene_r_index*sceneSize;
         float3 scene_r_point = scenePoints[scene_r_index];
         float3 scene_r_norm  = sceneNormals[scene_r_index];
         float3 scene_i_point = scenePoints[scene_i_index];
@@ -424,7 +423,7 @@ __global__ void ppf_vote_kernel(unsigned int *sceneKeys, unsigned int *sceneIndi
         for(int i = 0; i < thisPPFCount; i++){
             modelPPFIndex = key2ppfMap[thisFirstPPFIndex+i];
             model_r_index = modelPPFIndex / modelSize;
-            model_i_index = model_r_index + (modelPPFIndex - model_r_index*modelSize);
+            model_i_index = modelPPFIndex - model_r_index*modelSize;
 
             model_r_point = modelPoints[model_r_index];
             model_r_norm  = modelNormals[model_r_index];
