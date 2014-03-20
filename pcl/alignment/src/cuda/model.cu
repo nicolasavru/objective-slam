@@ -192,26 +192,26 @@ void Model::ppf_lookup(Scene *scene){
     // Step 5
     // Can almost represent this (and Step 4) as a reduction or transformation, but not quite.
     thrust::device_vector<unsigned int> *accumulator =
-        new thrust::device_vector<unsigned int>(this->vecs->size()*n_angle);
+        new thrust::device_vector<unsigned int>(this->vecs->size()*N_ANGLE);
 
      ppf_reduce_rows_kernel<<<this->vecs->size()/BLOCK_SIZE,BLOCK_SIZE>>>(RAW_PTR(this->vecs),
                                                                           RAW_PTR(this->vecCounts),
                                                                           RAW_PTR(this->firstVecIndex),
                                                                           RAW_PTR(this->votes),
-                                                                          n_angle,
+                                                                          N_ANGLE,
                                                                           RAW_PTR(accumulator),
                                                                           this->vecs->size());
 
     // Steps 6, 7
     thrust::device_vector<unsigned int> *maxidx =
         new thrust::device_vector<unsigned int>(this->vecs->size());
-    rowwise_max(*accumulator, this->vecs->size(), n_angle, *maxidx);
+    rowwise_max(*accumulator, this->vecs->size(), N_ANGLE, *maxidx);
 
     thrust::device_vector<unsigned int> *scores =
         new thrust::device_vector<unsigned int>(this->vecs->size());
     ppf_score_kernel<<<this->vecs->size()/BLOCK_SIZE,BLOCK_SIZE>>>(RAW_PTR(accumulator),
                                                                    RAW_PTR(maxidx),
-                                                                   n_angle, score_threshold,
+                                                                   N_ANGLE, SCORE_THRESHOLD,
                                                                    RAW_PTR(scores),
                                                                    this->vecs->size());
 
@@ -221,15 +221,15 @@ void Model::ppf_lookup(Scene *scene){
 
      trans_calc_kernel<<<this->vecs->size()/BLOCK_SIZE,BLOCK_SIZE>>>
              (RAW_PTR(this->vecs), RAW_PTR(this->vecCounts),
-                     RAW_PTR(this->firstVecIndex), RAW_PTR(this->votes),
-                     RAW_PTR(maxidx), RAW_PTR(scores),
-                     n_angle,
-                     RAW_PTR(this->modelPoints), RAW_PTR(this->modelNormals),
-                     this->modelPoints->size(),
-                     RAW_PTR(scene->getModelPoints()), RAW_PTR(scene->getModelNormals()),
-                     scene->getModelPoints()->size(),
-                     RAW_PTR(this->transformations),
-                     this->vecs->size());
+              RAW_PTR(this->firstVecIndex), RAW_PTR(this->votes),
+              RAW_PTR(maxidx), RAW_PTR(scores),
+              N_ANGLE,
+              RAW_PTR(this->modelPoints), RAW_PTR(this->modelNormals),
+              this->modelPoints->size(),
+              RAW_PTR(scene->getModelPoints()), RAW_PTR(scene->getModelNormals()),
+              scene->getModelPoints()->size(),
+              RAW_PTR(this->transformations),
+              this->vecs->size());
 
     #ifdef DEBUG
         {

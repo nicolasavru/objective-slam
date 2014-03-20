@@ -218,9 +218,9 @@ __device__ __forceinline__ void invht(float T[4][4], float T_inv[4][4]){
     T_tmp.x = T_inv[0][3];
     T_tmp.y = T_inv[1][3];
     T_tmp.z = T_inv[2][3];
-    
+
     //-R*t
-    float3 tmp = mat3f_vmul(A_neg_transpose, T_tmp);
+    float3 tmp = mat3f_vmul(neg_Rtranspose, T_tmp);
     T_inv[0][3] = tmp.x;
     T_inv[1][3] = tmp.y;
     T_inv[2][3] = tmp.z;
@@ -274,7 +274,7 @@ __device__ void trans_model_scene(float3 m_r, float3 n_r_m, float3 m_i,
     u.x = 0;
     v.x = 0;
     float alpha = atan2f(cross(u, v).x, dot(u, v));
-    alpha_idx = (int)(alpha + CUDART_PI_F) /D_ANGLE1);
+    alpha_idx = (int)((alpha + CUDART_PI_F)/5);
     rotx(alpha, rot_x);
 
     invht(T_s_g, T_tmp);
@@ -331,7 +331,7 @@ __device__ void compute_transforms(unsigned int angle_idx, float3 m_r,
     mat4f_mul(rot_z, rot_y, T_tmp);
     mat4f_mul(T_tmp, transm, T_s_g);
 
-    rotx(angle_idx*2*CUDART_PI_F/n_angle, rot_x);
+    rotx(angle_idx*2*CUDART_PI_F/N_ANGLE, rot_x);
     invht(T_s_g, T_tmp);
     mat4f_mul(T_tmp, rot_x, T_tmp2);
     mat4f_mul(T_tmp2, T_m_g, T);
