@@ -16,7 +16,9 @@ Scene::Scene(){}
 Scene::Scene(thrust::host_vector<float3> *points, thrust::host_vector<float3> *normals, int n){
     this->initPPFs(points, normals, n);
     this->hashKeys = new thrust::device_vector<unsigned int>(this->modelPPFs->size());
-    ppf_hash_kernel<<<32768/BLOCK_SIZE,BLOCK_SIZE>>>(RAW_PTR(this->modelPPFs),
+    
+    int blocks = min((this->modelPPFs->size() + BLOCK_SIZE - 1) / BLOCK_SIZE, MAX_NBLOCKS);
+    ppf_hash_kernel<<<blocks/BLOCK_SIZE,BLOCK_SIZE>>>(RAW_PTR(this->modelPPFs),
                                                                        RAW_PTR(this->hashKeys),
                                                                        this->modelPPFs->size());
 }
@@ -44,7 +46,8 @@ void Scene::initPPFs(thrust::host_vector<float3> *points, thrust::host_vector<fl
         HANDLE_ERROR(cudaEventRecord(start, 0));
     #endif
 
-    ppf_kernel<<<n/BLOCK_SIZE,BLOCK_SIZE>>>(RAW_PTR(this->modelPoints),
+    int blocks = min((n + BLOCK_SIZE - 1) / BLOCK_SIZE, MAX_NBLOCKS);
+    ppf_kernel<<<blocks,BLOCK_SIZE>>>(RAW_PTR(this->modelPoints),
                                             RAW_PTR(this->modelNormals),
                                             RAW_PTR(this->modelPPFs),
                                             n);

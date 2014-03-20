@@ -26,7 +26,8 @@ Model::Model(thrust::host_vector<float3> *points, thrust::host_vector<float3> *n
         new thrust::device_vector<unsigned int>(this->modelPPFs->size());
 
     // for each ppf, compute a 32-bit hash
-    ppf_hash_kernel<<<32768/BLOCK_SIZE,BLOCK_SIZE>>>(RAW_PTR(this->modelPPFs),
+    int blocks = min((this->modelPPFs->size() + BLOCK_SIZE - 1) / BLOCK_SIZE, MAX_NBLOCKS);
+    ppf_hash_kernel<<<blocks,BLOCK_SIZE>>>(RAW_PTR(this->modelPPFs),
                                                      RAW_PTR(hashKeys_old),
                                                      this->modelPPFs->size());
 // #ifdef DEBUG
@@ -111,7 +112,8 @@ void Model::ppf_lookup(Scene *scene){
         new thrust::device_vector<float3>(scene->getModelPPFs()->size());
 
     // populates parallel arrays votes and vecs_old
-    ppf_vote_kernel<<<32768,BLOCK_SIZE>>>
+    int blocks = min((scene->getHashKeys()->size() + BLOCK_SIZE - 1) / BLOCK_SIZE, MAX_NBLOCKS);
+    ppf_vote_kernel<<<blocks,BLOCK_SIZE>>>
         (RAW_PTR(scene->getHashKeys()), RAW_PTR(sceneIndices),
          RAW_PTR(this->hashKeys), RAW_PTR(this->ppfCount),
          RAW_PTR(this->firstPPFIndex), RAW_PTR(this->key2ppfMap),
@@ -193,8 +195,9 @@ void Model::ppf_lookup(Scene *scene){
     // Can almost represent this (and Step 4) as a reduction or transformation, but not quite.
     thrust::device_vector<unsigned int> *accumulator =
         new thrust::device_vector<unsigned int>(this->vecs->size()*N_ANGLE);
-
-     ppf_reduce_rows_kernel<<<this->vecs->size()/BLOCK_SIZE,BLOCK_SIZE>>>(RAW_PTR(this->vecs),
+    
+    blocks = min((this->vecs->size() + BLOCK_SIZE - 1) / BLOCK_SIZE, MAX_NBLOCKS);
+    ppf_reduce_rows_kernel<<<blocks,BLOCK_SIZE>>>(RAW_PTR(this->vecs),
                                                                           RAW_PTR(this->vecCounts),
                                                                           RAW_PTR(this->firstVecIndex),
                                                                           RAW_PTR(this->votes),
@@ -209,7 +212,9 @@ void Model::ppf_lookup(Scene *scene){
 
     thrust::device_vector<unsigned int> *scores =
         new thrust::device_vector<unsigned int>(this->vecs->size());
-    ppf_score_kernel<<<this->vecs->size()/BLOCK_SIZE,BLOCK_SIZE>>>(RAW_PTR(accumulator),
+    
+    blocks = min((this->vecs->size() + BLOCK_SIZE - 1) / BLOCK_SIZE, MAX_NBLOCKS);
+    ppf_score_kernel<<<blocks,BLOCK_SIZE>>>(RAW_PTR(accumulator),
                                                                    RAW_PTR(maxidx),
                                                                    N_ANGLE, SCORE_THRESHOLD,
                                                                    RAW_PTR(scores),
@@ -219,7 +224,8 @@ void Model::ppf_lookup(Scene *scene){
     // call trans_calc_kernel
     this->transformations = new thrust::device_vector<float>(this->vecs->size()*16);
 
-     trans_calc_kernel<<<this->vecs->size()/BLOCK_SIZE,BLOCK_SIZE>>>
+    blocks = min((this->vecs->size() + BLOCK_SIZE - 1) / BLOCK_SIZE, MAX_NBLOCKS);
+    trans_calc_kernel<<<blocks,BLOCK_SIZE>>>
              (RAW_PTR(this->vecs), RAW_PTR(this->vecCounts),
               RAW_PTR(this->firstVecIndex), RAW_PTR(this->votes),
               RAW_PTR(maxidx), RAW_PTR(scores),
