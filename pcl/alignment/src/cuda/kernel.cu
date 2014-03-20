@@ -183,20 +183,42 @@ __device__ float4 minus(float4 u, float4 v){
     return w;
 }
 
-__device__ void invht(float T[4][4], float T_inv[4][4]){
-    float A_neg_transpose[3][3];
-    for (int i=0; i<3; i++){
-        for (int j=0; j<3; j++){
-            T_inv[i][j] = T[j][i];
-            A_neg_transpose[i][j] = -1*T[j][i];
-        }
-    }
+__device__ __forceinline__ void invht(float T[4][4], float T_inv[4][4]){
+    // T = [R t;0 1]; inv(T) = [R' -R'*t;0 1]; R*R' = I
+    // R'
+    T_inv[0][0] = T[0][0];
+    T_inv[0][1] = T[1][0];
+    T_inv[0][2] = T[2][0];
+    
+    T_inv[1][0] = T[0][1];
+    T_inv[1][1] = T[1][1];
+    T_inv[1][2] = T[2][1];
+    
+    T_inv[2][0] = T[0][2];
+    T_inv[2][1] = T[1][2];
+    T_inv[2][2] = T[2][2];
+    
+    // -R'
+    float neg_Rtranspose[3][3];
+    neg_Rtranspose[0][0] = -T_inv[0][0];
+    neg_Rtranspose[0][1] = -T_inv[0][1];
+    neg_Rtranspose[0][2] = -T_inv[0][2];
 
+    neg_Rtranspose[1][0] = -T_inv[1][0];
+    neg_Rtranspose[1][1] = -T_inv[1][1];
+    neg_Rtranspose[1][2] = -T_inv[1][2];
+
+    neg_Rtranspose[2][0] = -T_inv[2][0];
+    neg_Rtranspose[2][1] = -T_inv[2][1];
+    neg_Rtranspose[2][2] = -T_inv[2][2];
+    
+    // t
     float3 T_tmp;
     T_tmp.x = T_inv[0][3];
     T_tmp.y = T_inv[1][3];
     T_tmp.z = T_inv[2][3];
-
+    
+    //-R*t
     float3 tmp = mat3f_vmul(A_neg_transpose, T_tmp);
     T_inv[0][3] = tmp.x;
     T_inv[1][3] = tmp.y;
