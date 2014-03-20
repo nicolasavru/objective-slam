@@ -29,7 +29,7 @@ __device__ __forceinline__ float norm(float3 v){
     return sqrtf(dot(v, v));
 }
 
-__device__  float3 cross(float3 u, float3 v){
+__device__ __forceinline__  float3 cross(float3 u, float3 v){
     float3 w = {u.y*v.z - u.z*v.y,
                 u.z*v.x - u.x*v.z,
                 u.x*v.y - u.y*v.z};
@@ -40,7 +40,7 @@ __device__ __forceinline__ float quant_downf(float x, float y){
     return x - fmodf(x, y);
 }
 
-__device__ float4 disc_feature(float4 f, float d_dist, float d_angle){
+__device__ __forceinline__ float4 disc_feature(float4 f, float d_dist, float d_angle){
     f.x = quant_downf(f.x, d_dist);
     f.y = quant_downf(f.y, d_angle);
     f.z = quant_downf(f.z, d_angle);
@@ -48,14 +48,14 @@ __device__ float4 disc_feature(float4 f, float d_dist, float d_angle){
     return f;
 }
 
-__device__ float3 discretize(float3 f, float d_dist){
+__device__ __forceinline__ float3 discretize(float3 f, float d_dist){
     f.x = quant_downf(f.x, d_dist);
     f.y = quant_downf(f.y, d_dist);
     f.z = quant_downf(f.z, d_dist);
     return f;
 }
 
-__device__ float4 compute_ppf(float3 p1, float3 n1, float3 p2, float3 n2){
+__device__ __forceinline__ float4 compute_ppf(float3 p1, float3 n1, float3 p2, float3 n2){
     float3 d;
     d.x = p2.x - p1.x;
     d.y = p2.y - p1.y;
@@ -70,7 +70,7 @@ __device__ float4 compute_ppf(float3 p1, float3 n1, float3 p2, float3 n2){
     return f;
 }
 
-__device__ void trans(float3 v, float T[4][4]){
+__device__ __forceinline__ void trans(float3 v, float T[4][4]){
     memset(T, 0, sizeof(T));
     T[0][0] = 1;
     T[1][1] = 1;
@@ -81,7 +81,7 @@ __device__ void trans(float3 v, float T[4][4]){
     T[2][3] = v.z;
 }
 
-__device__ void rotx(float theta, float T[4][4]){
+__device__ __forceinline__ void rotx(float theta, float T[4][4]){
     memset(T, 0, sizeof(T));
     T[0][0] = 1;
     T[1][1] = cosf(theta);
@@ -91,7 +91,7 @@ __device__ void rotx(float theta, float T[4][4]){
     T[3][3] = 1;
 }
 
-__device__ void roty(float theta, float T[4][4]){
+__device__ __forceinline__ void roty(float theta, float T[4][4]){
     memset(T, 0, sizeof(T));
     T[0][0] = cosf(theta);
     T[0][2] = sinf(theta);
@@ -101,7 +101,7 @@ __device__ void roty(float theta, float T[4][4]){
     T[3][3] = 1;
 }
 
-__device__ void rotz(float theta, float T[4][4]){
+__device__ __forceinline__ void rotz(float theta, float T[4][4]){
     memset(T, 0, sizeof(T));
     T[0][0] = cosf(theta);
     T[1][0] = sinf(theta);
@@ -111,10 +111,11 @@ __device__ void rotz(float theta, float T[4][4]){
     T[3][3] = 1;
 }
 
-__device__ void mat4f_mul(const float A[4][4],
+__device__ __forceinline__ void mat4f_mul(const float A[4][4],
                           const float B[4][4],
                           float C[4][4]){
     memset(C, 0, sizeof(C));
+    #pragma unroll
     for(int i = 0; i < 4; i++){
         for(int j = 0; j < 4; j++){
             for(int k = 0; k < 4; k++){
@@ -124,7 +125,7 @@ __device__ void mat4f_mul(const float A[4][4],
     }
 }
 
-__device__ float3 mat3f_vmul(const float A[3][3], const float3 b){
+__device__ __forceinline__ float3 mat3f_vmul(const float A[3][3], const float3 b){
     float3 *Af3 = (float3 *) A;
     float3 c;
     c.x = dot(Af3[0], b);
@@ -133,7 +134,7 @@ __device__ float3 mat3f_vmul(const float A[3][3], const float3 b){
     return c;
 }
 
-__device__ float4 mat4f_vmul(const float A[4][4], const float4 b){
+__device__ __forceinline__ float4 mat4f_vmul(const float A[4][4], const float4 b){
     float4 *Af4 = (float4 *) A;
     float4 c;
     c.x = dot(Af4[0], b);
@@ -143,42 +144,42 @@ __device__ float4 mat4f_vmul(const float A[4][4], const float4 b){
     return c;
 }
 
-__device__ float4 homogenize(float3 v){
+__device__ __forceinline__ float4 homogenize(float3 v){
     float4 w = {v.x, v.y, v.z, 1};
     return w;
 }
 
-__device__ float3 dehomogenize(float4 v){
+__device__ __forceinline__ float3 dehomogenize(float4 v){
     float3 w = {v.x, v.y, v.z};
     return w;
 }
 
-__device__ float3 times(float a, float3 v){
+__device__ __forceinline__ float3 times(float a, float3 v){
     float3 w = {a*v.x, a*v.y, a*v.z};
     return w;
 }
 
-__device__ float4 times(float a, float4 v){
+__device__ __forceinline__ float4 times(float a, float4 v){
     float4 w = {a*v.x, a*v.y, a*v.z, a*v.z};
     return w;
 }
 
-__device__ float3 plus(float3 u, float3 v){
+__device__ __forceinline__ float3 plus(float3 u, float3 v){
     float3 w = {u.x+v.x, u.y+v.y, u.z+v.z};
     return w;
 }
 
-__device__ float4 plus(float4 u, float4 v){
+__device__ __forceinline__ float4 plus(float4 u, float4 v){
     float4 w = {u.x+v.x, u.y+v.y, u.z+v.z, u.w+v.w};
     return w;
 }
 
-__device__ float3 minus(float3 u, float3 v){
+__device__ __forceinline__ float3 minus(float3 u, float3 v){
     float3 w = {u.x-v.x, u.y-v.y, u.z-v.z};
     return w;
 }
 
-__device__ float4 minus(float4 u, float4 v){
+__device__ __forceinline__ float4 minus(float4 u, float4 v){
     float4 w = {u.x-v.x, u.y-v.y, u.z-v.z, u.w-v.w};
     return w;
 }
@@ -249,8 +250,8 @@ __device__ void trans_model_scene(float3 m_r, float3 n_r_m, float3 m_i,
     n_tmp = homogenize(n_r_m);
     mat4f_vmul(rot_y, n_tmp);
     rotz(-1*atan2f(n_tmp.y, n_tmp.x), rot_z);
-    mat4f_mul(rot_z, rot_y, T_tmp);
-    mat4f_mul(T_tmp, transm, T_m_g);
+    mat4f_mul(rot_z, rot_y, T_tmp);     //POTENTIALLY SLOW
+    mat4f_mul(T_tmp, transm, T_m_g);    //POTENTIALLY SLOW
 
     s_r = times(-1, s_r);
     trans(s_r, transm);
@@ -258,8 +259,8 @@ __device__ void trans_model_scene(float3 m_r, float3 n_r_m, float3 m_i,
     n_tmp = homogenize(n_r_s);
     mat4f_vmul(rot_y, n_tmp);
     rotz(-1*atan2f(n_tmp.y, n_tmp.x), rot_z);
-    mat4f_mul(rot_z, rot_y, T_tmp);
-    mat4f_mul(T_tmp, transm, T_s_g);
+    mat4f_mul(rot_z, rot_y, T_tmp);     //POTENTIALLY SLOW
+    mat4f_mul(T_tmp, transm, T_s_g);    //POTENTIALLY SLOW
 
 
     n_tmp = homogenize(m_i);
@@ -273,19 +274,19 @@ __device__ void trans_model_scene(float3 m_r, float3 n_r_m, float3 m_i,
     u.x = 0;
     v.x = 0;
     float alpha = atan2f(cross(u, v).x, dot(u, v));
-    alpha_idx = (int) roundf((alpha / (2*CUDART_PI_F) ) * (n_angle - 1));
+    alpha_idx = (int)(alpha + CUDART_PI_F) /D_ANGLE1);
     rotx(alpha, rot_x);
 
     invht(T_s_g, T_tmp);
-    mat4f_mul(T_tmp, rot_x, T_tmp2);
-    mat4f_mul(T_tmp2, T_m_g, T);
+    mat4f_mul(T_tmp, rot_x, T_tmp2);    //POTENTIALLY SLOW
+    mat4f_mul(T_tmp2, T_m_g, T);        //POTENTIALLY SLOW
     // T is T_ms
 
     trans_vec.x = T[0][3];
     trans_vec.y = T[1][3];
     trans_vec.z = T[2][3];
     //think about discretization size and smoothing...
-    trans_vec = discretize(trans_vec, d_dist);
+    trans_vec = discretize(trans_vec, D_DIST);
 }
 
 __device__ void compute_rot_angles(float3 n_r_m, float3 n_r_s,
@@ -314,7 +315,7 @@ __device__ void compute_transforms(unsigned int angle_idx, float3 m_r,
     float transm[4][4], rot_x[4][4], rot_y[4][4], rot_z[4][4], T_tmp[4][4],
           T_tmp2[4][4], T_m_g[4][4], T_s_g[4][4];
 
-    m_r = discretize(m_r, d_dist);
+    m_r = discretize(m_r, D_DIST);
     m_r = times(-1, m_r);
 
     trans(m_r, transm);
@@ -359,7 +360,7 @@ __global__ void ppf_kernel(float3 *points, float3 *norms, float4 *out, int count
             for(int j = 0; j < BLOCK_SIZE; j++) {
                 if((j + i - idx) == 0) continue;
                 out[idx*count + j + i] = compute_ppf(thisPoint, thisNorm, Spoints[j], Snorms[j]);
-                out[idx*count + j + i] = disc_feature(out[idx*count + j + i], d_dist, d_angle);
+                out[idx*count + j + i] = disc_feature(out[idx*count + j + i], D_DIST, D_ANGLE0);
             }
         }
     }
@@ -453,7 +454,7 @@ __global__ void ppf_vote_kernel(unsigned int *sceneKeys, unsigned int *sceneIndi
 
             trans_model_scene(model_r_point, model_r_norm, model_i_point,
                               scene_r_point, scene_r_norm, scene_i_point,
-                              d_dist, trans_vec, alpha_idx);
+                              D_DIST, trans_vec, alpha_idx);
             votes[thisFirstPPFIndex + i] =
                 (((unsigned long) scene_r_index) << 32) | (model_r_index << 6) | (alpha_idx);
             // begin step 2 of algorithm here
