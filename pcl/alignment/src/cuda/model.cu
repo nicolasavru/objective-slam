@@ -8,6 +8,7 @@
 #include <thrust/sequence.h>
 #include <thrust/device_vector.h>
 #include <thrust/binary_search.h>
+#include <thrust/fill.h>
 
 #include "model.h"
 #include "impl/ppf_utils.hpp"
@@ -195,6 +196,7 @@ void Model::ppf_lookup(Scene *scene){
     // Can almost represent this (and Step 4) as a reduction or transformation, but not quite.
     thrust::device_vector<unsigned int> *accumulator =
         new thrust::device_vector<unsigned int>(this->vecs->size()*N_ANGLE);
+    thrust::fill(accumulator.begin(), accumulator.end(), 0);
     
     blocks = min((this->vecs->size() + BLOCK_SIZE - 1) / BLOCK_SIZE, MAX_NBLOCKS);
     ppf_reduce_rows_kernel<<<blocks,BLOCK_SIZE>>>(RAW_PTR(this->vecs),

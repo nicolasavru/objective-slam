@@ -343,7 +343,7 @@ __global__ void ppf_kernel(float3 *points, float3 *norms, float4 *out, int count
     int ind = threadIdx.x;
     int idx = ind + blockIdx.x * blockDim.x;
 
-    if(idx < count) {
+    while(idx < count) {
 
         __shared__ float3 Spoints[BLOCK_SIZE];
         __shared__ float3 Snorms[BLOCK_SIZE];
@@ -363,6 +363,8 @@ __global__ void ppf_kernel(float3 *points, float3 *norms, float4 *out, int count
                 out[idx*count + j + i] = disc_feature(out[idx*count + j + i], D_DIST, D_ANGLE0);
             }
         }
+        //grid stride
+        idx += blockDim.x * gridDim.x;
     }
 }
 
@@ -376,6 +378,7 @@ __global__ void ppf_hash_kernel(float4 *ppfs, unsigned int *codes, int count){
     while(idx < count){
         codes[idx] = hash(ppfs+idx, sizeof(float4));
 
+        //grid stride
         idx += blockDim.x * gridDim.x;
     }
 }
@@ -495,16 +498,17 @@ __global__ void ppf_reduce_rows_kernel(float3 *vecs, unsigned int *vecCounts,
 
     unsigned long low6 = ((unsigned long) -1) >> 58;
 
-    if(idx < count){
+    while(idx < count){
         thisVec = vecs[idx];
         thisVecCount = vecCounts[idx];
         thisVecIndex = firstVecIndex[idx];
-        memset(accumulator+idx*n_angle, 0, n_angle*sizeof(unsigned int));
         for(int i = 0; i < thisVecCount; i++){
             vote      = votes[thisVecIndex+i];
             angle_idx = vote & low6;
             accumulator[idx+angle_idx]++;
         }
+        //grid stride
+        idx += blockDim.x * gridDim.x;
     }
 }
 
@@ -521,12 +525,15 @@ __global__ void ppf_score_kernel(unsigned int *accumulator,
 
     int thisMaxIdx, score, score_left, score_right;
 
-    if(idx < count){
+    while(idx < count){
         thisMaxIdx = idx*n_angle + maxidx[idx];
         score_left = thisMaxIdx > 0 ? accumulator[thisMaxIdx-1] : 0;
         score_right = thisMaxIdx < (n_angle-1) ? accumulator[thisMaxIdx+1] : 0;
         score = accumulator[thisMaxIdx] + score_left + score_right;
         scores[idx] = score > threshold ? score : 0;
+
+        //grid stride
+        idx += blockDim.x * gridDim.x;
     }
 }
 
@@ -566,7 +573,7 @@ __global__ void trans_calc_kernel(float3 *vecs, unsigned int *vecCounts,
     float s_roty = 0;
     float s_rotz = 0;
 
-    if(idx < count){
+    while(idx < count){
         thisVecCount = vecCounts[idx];
         thisFirstVecIndex = firstVecIndex[idx];
 
@@ -593,5 +600,8 @@ __global__ void trans_calc_kernel(float3 *vecs, unsigned int *vecCounts,
         //                    m_roty, m_rotz,
         //                    scene_points[scene_point_idx],
         //                    s_roty, s_rotz, ((float (*)[4]) transforms + idx*16));
+
+        //grid stride
+        idx += blockDim.x * gridDim.x;
     }
 }
