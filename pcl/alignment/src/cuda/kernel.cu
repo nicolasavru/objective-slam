@@ -621,11 +621,10 @@ __global__ void trans_calc_kernel(float3 *vecs, unsigned int *vecCounts,
             s_rotz = (s_rotz_t + i*s_rotz)/(i+1);
         }
 
-        // segfaults
-        // compute_transforms(angle_idx, model_points[model_point_idx],
-        //                    m_roty, m_rotz,
-        //                    scene_points[scene_point_idx],
-        //                    s_roty, s_rotz, ((float (*)[4]) transforms + idx*16));
+         compute_transforms(angle_idx, model_points[model_point_idx],
+                            m_roty, m_rotz,
+                            scene_points[scene_point_idx],
+                            s_roty, s_rotz, ((float (*)[4]) transforms + idx*16));
 
         //grid stride
         idx += blockDim.x * gridDim.x;
