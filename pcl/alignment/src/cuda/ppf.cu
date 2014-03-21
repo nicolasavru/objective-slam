@@ -194,7 +194,7 @@ int ply_load_main(float3 *scenePoints, float3 *sceneNormals, int sceneN,
     thrust::host_vector<float> *transformations = new thrust::host_vector<float>(*model->getTransformations());
 //
     // write out transformations
-    for (int i=0; i<transformations->size()/16; i++){
+    for (int i=0; i<10; i++){
         cout << "Transformtion[" << i << "]" << endl;
         for (int j=0; j<4; j++){
             for (int k=0; k<4; k++){

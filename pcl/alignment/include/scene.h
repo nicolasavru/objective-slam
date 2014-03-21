@@ -30,7 +30,7 @@ class Scene {
 
         // Number of PPF in the mode. I.e., number of elements in each of
         // the following arrays;
-        int n;
+        unsigned long n;
 
         // Vector of model points
         thrust::device_vector<float3> *modelPoints;

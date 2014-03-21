@@ -17,6 +17,25 @@ __device__ unsigned int hash(void *f, int n){
     return hash;
 }
 
+__device__ __forceinline__ void zeroMat4(float T[4][4]){
+    T[0][0] = 0;
+    T[0][1] = 0;
+    T[0][2] = 0;
+    T[0][3] = 0;
+    T[1][0] = 0;
+    T[1][1] = 0;
+    T[1][2] = 0;
+    T[1][3] = 0;
+    T[2][0] = 0;
+    T[2][1] = 0;
+    T[2][2] = 0;
+    T[2][3] = 0;
+    T[3][0] = 0;
+    T[3][1] = 0;
+    T[3][2] = 0;
+    T[3][3] = 0;
+}
+
 __device__ __forceinline__ float dot(float3 v1, float3 v2){
     return v1.x*v2.x + v1.y*v2.y + v1.z*v2.z;
 }
@@ -71,7 +90,7 @@ __device__ __forceinline__ float4 compute_ppf(float3 p1, float3 n1, float3 p2, f
 }
 
 __device__ __forceinline__ void trans(float3 v, float T[4][4]){
-    memset(T, 0, sizeof(T));
+    zeroMat4(T);
     T[0][0] = 1;
     T[1][1] = 1;
     T[2][2] = 1;
@@ -82,8 +101,7 @@ __device__ __forceinline__ void trans(float3 v, float T[4][4]){
 }
 
 __device__ __forceinline__ void rotx(float theta, float T[4][4]){
-    memset(T, 0, sizeof(T));
-    T[0][0] = 1;
+    zeroMat4(T);
     T[1][1] = cosf(theta);
     T[2][1] = sinf(theta);
     T[1][2] = -1*T[2][1];
@@ -92,7 +110,7 @@ __device__ __forceinline__ void rotx(float theta, float T[4][4]){
 }
 
 __device__ __forceinline__ void roty(float theta, float T[4][4]){
-    memset(T, 0, sizeof(T));
+    zeroMat4(T);
     T[0][0] = cosf(theta);
     T[0][2] = sinf(theta);
     T[1][1] = 1;
@@ -102,7 +120,7 @@ __device__ __forceinline__ void roty(float theta, float T[4][4]){
 }
 
 __device__ __forceinline__ void rotz(float theta, float T[4][4]){
-    memset(T, 0, sizeof(T));
+    zeroMat4(T);
     T[0][0] = cosf(theta);
     T[1][0] = sinf(theta);
     T[0][1] = -1*T[1][0];
@@ -114,8 +132,15 @@ __device__ __forceinline__ void rotz(float theta, float T[4][4]){
 __device__ __forceinline__ void mat4f_mul(const float A[4][4],
                           const float B[4][4],
                           float C[4][4]){
-    memset(C, 0, sizeof(C));
     #pragma unroll
+    for(int i = 0; i < 4; i++){
+        for(int j = 0; j < 4; j++){
+            for(int k = 0; k < 4; k++){
+                C[i][j] = 0;
+            }
+        }
+    }
+
     for(int i = 0; i < 4; i++){
         for(int j = 0; j < 4; j++){
             for(int k = 0; k < 4; k++){
@@ -190,15 +215,15 @@ __device__ __forceinline__ void invht(float T[4][4], float T_inv[4][4]){
     T_inv[0][0] = T[0][0];
     T_inv[0][1] = T[1][0];
     T_inv[0][2] = T[2][0];
-    
+
     T_inv[1][0] = T[0][1];
     T_inv[1][1] = T[1][1];
     T_inv[1][2] = T[2][1];
-    
+
     T_inv[2][0] = T[0][2];
     T_inv[2][1] = T[1][2];
     T_inv[2][2] = T[2][2];
-    
+
     // -R'
     float neg_Rtranspose[3][3];
     neg_Rtranspose[0][0] = -T_inv[0][0];
@@ -212,12 +237,12 @@ __device__ __forceinline__ void invht(float T[4][4], float T_inv[4][4]){
     neg_Rtranspose[2][0] = -T_inv[2][0];
     neg_Rtranspose[2][1] = -T_inv[2][1];
     neg_Rtranspose[2][2] = -T_inv[2][2];
-    
+
     // t
     float3 T_tmp;
-    T_tmp.x = T_inv[0][3];
-    T_tmp.y = T_inv[1][3];
-    T_tmp.z = T_inv[2][3];
+    T_tmp.x = T[0][3];
+    T_tmp.y = T[1][3];
+    T_tmp.z = T[2][3];
 
     //-R*t
     float3 tmp = mat3f_vmul(neg_Rtranspose, T_tmp);
@@ -461,6 +486,7 @@ __global__ void ppf_vote_kernel(unsigned int *sceneKeys, unsigned int *sceneIndi
             votes[thisFirstPPFIndex + i] =
                 (((unsigned long) scene_r_index) << 32) | (model_r_index << 6) | (alpha_idx);
             // begin step 2 of algorithm here
+            trans_vec.y = 5;
             vecs_old[thisFirstPPFIndex + i] = trans_vec;
         }
 
