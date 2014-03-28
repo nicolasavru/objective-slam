@@ -47,37 +47,37 @@ __global__ void float_to_color( unsigned char *optr,
 __global__ void float_to_color( uchar4 *optr,
                               const float *outSrc );
 
-#if _WIN32
-    //Windows threads.
-    #include <windows.h>
+/* #if _WIN32 */
+/*     //Windows threads. */
+/*     #include <windows.h> */
 
-    typedef HANDLE CUTThread;
-    typedef unsigned (WINAPI *CUT_THREADROUTINE)(void *);
+/*     typedef HANDLE CUTThread; */
+/*     typedef unsigned (WINAPI *CUT_THREADROUTINE)(void *); */
 
-    #define CUT_THREADPROC unsigned WINAPI
-    #define  CUT_THREADEND return 0
+/*     #define CUT_THREADPROC unsigned WINAPI */
+/*     #define  CUT_THREADEND return 0 */
 
-#else
-    //POSIX threads.
-    #include <pthread.h>
+/* #else */
+/*     //POSIX threads. */
+/*     #include <pthread.h> */
 
-    typedef pthread_t CUTThread;
-    typedef void *(*CUT_THREADROUTINE)(void *);
+/*     typedef pthread_t CUTThread; */
+/*     typedef void *(*CUT_THREADROUTINE)(void *); */
 
-    #define CUT_THREADPROC void
-    #define  CUT_THREADEND
-#endif
+/*     #define CUT_THREADPROC void */
+/*     #define  CUT_THREADEND */
+/* #endif */
 
-//Create thread.
-CUTThread start_thread( CUT_THREADROUTINE, void *data );
+/* //Create thread. */
+/* CUTThread start_thread( CUT_THREADROUTINE, void *data ); */
 
-//Wait for thread to finish.
-void end_thread( CUTThread thread );
+/* //Wait for thread to finish. */
+/* void end_thread( CUTThread thread ); */
 
-//Destroy thread.
-void destroy_thread( CUTThread thread );
+/* //Destroy thread. */
+/* void destroy_thread( CUTThread thread ); */
 
-//Wait for multiple threads.
-void wait_for_threads( const CUTThread *threads, int num );
+/* //Wait for multiple threads. */
+/* void wait_for_threads( const CUTThread *threads, int num ); */
 
 #endif  // __BOOK_H__

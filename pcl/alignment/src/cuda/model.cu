@@ -71,7 +71,7 @@ Model::Model(thrust::host_vector<float3> *points, thrust::host_vector<float3> *n
     this->votes = NULL;
     this->voteCodes = NULL;
     this->voteCounts = NULL;
-
+    this->firstVecIndex = NULL;
 }
 // TODO: Deallocate memory for things not here yet
 Model::~Model(){

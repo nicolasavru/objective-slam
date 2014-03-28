@@ -31,6 +31,40 @@ typedef pcl::PPFEstimation<PointNT, PointNT, FeatureT> FeatureEstimationT;
 typedef pcl::PointCloud<FeatureT> FeatureCloudT;
 typedef pcl::visualization::PointCloudColorHandlerCustom<PointNT> ColorHandlerT;
 
+// template <typename T>
+boost::shared_ptr<pcl::visualization::PCLVisualizer> simpleVis (pcl::PointCloud<PointNT>::ConstPtr cloud){
+    // --------------------------------------------
+    // -----Open 3D viewer and add point cloud-----
+    // --------------------------------------------
+    boost::shared_ptr<pcl::visualization::PCLVisualizer> viewer (new pcl::visualization::PCLVisualizer ("3D Viewer"));
+    viewer->setBackgroundColor (0, 0, 0);
+    viewer->addPointCloud<PointNT> (cloud, "sample cloud");
+    viewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "sample cloud");
+    viewer->addCoordinateSystem (1.0, "foo", 0);
+    viewer->initCameraParameters ();
+    return (viewer);
+}
+
+// boost::shared_ptr<pcl::visualization::PCLVisualizer> normalsVis (
+//         pcl::PointCloud<pcl::PointXYZRGB>::ConstPtr cloud, pcl::PointCloud<pcl::Normal>::ConstPtr normals)
+// {
+//     // --------------------------------------------------------
+//     // -----Open 3D viewer and add point cloud and normals-----
+//     // --------------------------------------------------------
+//     boost::shared_ptr<pcl::visualization::PCLVisualizer> viewer (new pcl::visualization::PCLVisualizer ("3D Viewer"));
+//     viewer->setBackgroundColor (0, 0, 0);
+//     pcl::visualization::PointCloudColorHandlerRGBField<pcl::PointXYZRGB> rgb(cloud);
+//     viewer->addPointCloud<pcl::PointXYZRGB> (cloud, rgb, "sample cloud");
+//     viewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "sample cloud");
+//     viewer->addPointCloudNormals<pcl::PointXYZRGB, pcl::Normal> (cloud, normals, 100, 0.05, "normals");
+//     viewer->addCoordinateSystem (1.0, "foo", 0);
+//     viewer->initCameraParameters ();
+//     return (viewer);
+// }
+
+
+
+
 // Align a rigid object to a scene with clutter and occlusions
 int main(int argc, char **argv){
     // Point clouds
@@ -70,7 +104,7 @@ int main(int argc, char **argv){
     // Downsample
     pcl::console::print_highlight("Downsampling...\n");
     pcl::VoxelGrid<PointNT> grid;
-    float leaf = 0.02f;
+    float leaf = 0.03f;
     grid.setLeafSize(leaf, leaf, leaf);
     std::cerr << "object before filtering: " << object->width * object->height
             << " data points (" << pcl::getFieldsList(*object) << ")."
@@ -80,7 +114,7 @@ int main(int argc, char **argv){
     std::cerr << "object after filtering: " << object->width * object->height
             << " data points (" << pcl::getFieldsList(*object) << ")."
             << std::endl;
-    leaf = 0.04f;
+    leaf = 0.05f;
     grid.setLeafSize(leaf, leaf, leaf);
     std::cerr << "scene before filtering: " << scene->width * scene->height
             << " data points (" << pcl::getFieldsList(*scene) << ")."
@@ -94,14 +128,14 @@ int main(int argc, char **argv){
     // Estimate normals for object
     pcl::console::print_highlight("Estimating object normals...\n");
     pcl::NormalEstimationOMP<PointNT, PointNT> nest_obj;
-    nest_obj.setRadiusSearch(0.1);
+    nest_obj.setRadiusSearch(0.2);
     nest_obj.setInputCloud(object);
     nest_obj.compute(*object);
 
     // Estimate normals for scene
     pcl::console::print_highlight("Estimating scene normals...\n");
     pcl::NormalEstimationOMP<PointNT, PointNT> nest_scene;
-    nest_scene.setRadiusSearch(0.1);
+    nest_scene.setRadiusSearch(0.2);
     nest_scene.setInputCloud(scene);
     nest_scene.compute(*scene);
 
@@ -130,7 +164,21 @@ int main(int argc, char **argv){
     ply_load_main(scene_points, scene_normals, scene->points.size(), object_points,
                   object_normals, object->points.size(), 0);
 
-//    // // Estimate features
+    boost::shared_ptr<pcl::visualization::PCLVisualizer> viewer (new pcl::visualization::PCLVisualizer ("3D Viewer"));
+    viewer->setBackgroundColor (0, 0, 0);
+    viewer->addPointCloud<PointNT> (scene, "scene");
+    viewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "scene");
+    viewer->addPointCloud<PointNT> (object, "object");
+    viewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "object");
+    viewer->addCoordinateSystem (1.0, "foo", 0);
+    viewer->initCameraParameters ();
+
+    while (!viewer->wasStopped ()){
+        viewer->spinOnce (100);
+        boost::this_thread::sleep (boost::posix_time::microseconds (100000));
+    }
+
+    //    // // Estimate features
 //    // pcl::console::print_highlight ("Estimating features...\n");
 //    // FeatureEstimationT fest;
 //    // fest.setRadiusSearch (0.025);

@@ -336,9 +336,11 @@ __device__ void compute_rot_angles(float3 n_r_m, float3 n_r_s,
 __device__ void compute_transforms(unsigned int angle_idx, float3 m_r,
                                    float m_roty, float m_rotz,
                                    float3 s_r, float s_roty,
-                                   float s_rotz, float T[4][4]){
+                                   float s_rotz, float *T){
     float transm[4][4], rot_x[4][4], rot_y[4][4], rot_z[4][4], T_tmp[4][4],
           T_tmp2[4][4], T_m_g[4][4], T_s_g[4][4];
+
+    float (*T_arr)[4] = (float (*)[4])T;
 
     m_r = discretize(m_r, D_DIST);
     m_r = times(-1, m_r);
@@ -359,7 +361,7 @@ __device__ void compute_transforms(unsigned int angle_idx, float3 m_r,
     rotx(angle_idx*2*CUDART_PI_F/N_ANGLE, rot_x);
     invht(T_s_g, T_tmp);
     mat4f_mul(T_tmp, rot_x, T_tmp2);
-    mat4f_mul(T_tmp2, T_m_g, T);
+    mat4f_mul(T_tmp2, T_m_g, T_arr);
 }
 
 __global__ void ppf_kernel(float3 *points, float3 *norms, float4 *out, int count){
@@ -610,6 +612,7 @@ __global__ void trans_calc_kernel(float3 *vecs, unsigned int *vecCounts,
 
             scene_point_idx = (unsigned int) ((vote & hi32) >> 32);
             model_point_idx = (unsigned int) ((vote & model_point_mask) >> 6);
+//            model_point_idx &= ~(((unsigned int) 1) << 31);
             compute_rot_angles(model_normals[model_point_idx],
                                scene_normals[scene_point_idx],
                                &m_roty_t, &m_rotz_t, &s_roty_t, &s_rotz_t);
@@ -621,10 +624,13 @@ __global__ void trans_calc_kernel(float3 *vecs, unsigned int *vecCounts,
             s_rotz = (s_rotz_t + i*s_rotz)/(i+1);
         }
 
+        scene_point_idx = (unsigned int) ((votes[thisFirstVecIndex] & hi32) >> 32);
+        model_point_idx = (unsigned int) ((votes[thisFirstVecIndex] & model_point_mask) >> 6);
+
          compute_transforms(angle_idx, model_points[model_point_idx],
                             m_roty, m_rotz,
                             scene_points[scene_point_idx],
-                            s_roty, s_rotz, ((float (*)[4]) transforms + idx*16));
+                            s_roty, s_rotz, ((float *) transforms + idx*16));
 
         //grid stride
         idx += blockDim.x * gridDim.x;

@@ -31,7 +31,7 @@ if(NOT UNIX OR APPLE)
     add_definitions(-DPCLAPI_EXPORTS)
 endif()
 
-set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS} "--ftz=true --prec-div=false --prec-sqrt=false -arch=sm_20")
+set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS} "-O0 -g -G --ftz=true --prec-div=false --prec-sqrt=false -arch=sm_35")
 CUDA_COMPILE(cuda_objs ${cuda})
 
 add_executable (alignment src/alignment.cpp ${cuda_objs})

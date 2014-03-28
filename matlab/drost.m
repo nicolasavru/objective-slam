@@ -19,7 +19,7 @@ model_N = 2500;
 scene_N = 1000;
 
 [scene1_tri,scene1_pts] = ply_read('../ply/scene1_trimmed2.ply','tri');
-scene1_pts = roty(1)*rotz(2)*[scene1_pts; ones(1, size(scene1_pts,2))];
+%scene1_pts = roty(1)*rotz(2)*[scene1_pts; ones(1, size(scene1_pts,2))];
 scene1_pts = scene1_pts(1:3,:).';
 scene1_tri = scene1_tri.';
 
