@@ -132,14 +132,7 @@ __device__ __forceinline__ void rotz(float theta, float T[4][4]){
 __device__ __forceinline__ void mat4f_mul(const float A[4][4],
                           const float B[4][4],
                           float C[4][4]){
-    #pragma unroll
-    for(int i = 0; i < 4; i++){
-        for(int j = 0; j < 4; j++){
-            for(int k = 0; k < 4; k++){
-                C[i][j] = 0;
-            }
-        }
-    }
+    zeroMat4(C);
 
     for(int i = 0; i < 4; i++){
         for(int j = 0; j < 4; j++){
@@ -369,6 +362,7 @@ __global__ void ppf_kernel(float3 *points, float3 *norms, float4 *out, int count
 
     int ind = threadIdx.x;
     int idx = ind + blockIdx.x * blockDim.x;
+    int bound;
 
     while(idx < count) {
 
@@ -380,11 +374,15 @@ __global__ void ppf_kernel(float3 *points, float3 *norms, float4 *out, int count
 
         for(int i = 0; i < count; i+=BLOCK_SIZE){
 
-            Spoints[ind] = points[i+ind];
-            Snorms[ind]  = norms[i+ind];
+            bound = min(count - i, BLOCK_SIZE);
+
+            if (ind < bound){
+                Spoints[ind] = points[i+ind];
+                Snorms[ind]  = norms[i+ind];
+            }
             __syncthreads();
 
-            for(int j = 0; j < BLOCK_SIZE; j++) {
+            for(int j = 0; j < bound; j++) {
                 if((j + i - idx) == 0) continue;
                 out[idx*count + j + i] = compute_ppf(thisPoint, thisNorm, Spoints[j], Snorms[j]);
                 out[idx*count + j + i] = disc_feature(out[idx*count + j + i], D_DIST, D_ANGLE0);

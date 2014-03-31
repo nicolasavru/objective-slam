@@ -10,7 +10,7 @@
 
 //Launch configuration macros
 #define BLOCK_SIZE 512
-#define MAX_NBLOCKS 1024ul
+#define MAX_NBLOCKS 1024
 //Algorithm macros
 #define N_ANGLE 32
 #define D_ANGLE0 (2.0f*float(CUDART_PI_F))/float(N_ANGLE)  //this one is for discretizing the feature in ppf_kernel
