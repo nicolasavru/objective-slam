@@ -22,7 +22,8 @@ class Model : public Scene {
 
         thrust::device_vector<float>* getTransformations();
 
-    private:
+    // private:
+public:
 
 
 
@@ -66,6 +67,9 @@ class Model : public Scene {
         // transformations stores 4 by 4 arrays of transformation matrices
         // however it uses linear indexing
         thrust::device_vector<float> *transformations;
+
+        thrust::device_vector<unsigned int> *accumulator;
+        thrust::device_vector<unsigned int> *maxidx;
 
         void accumulateVotes();
 };

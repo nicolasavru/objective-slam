@@ -105,7 +105,7 @@ void Model::ppf_lookup(Scene *scene){
     // Steps 1-3
     // launch voting kernel instance for each scene reference point
     unsigned int lastIndex, lastCount;
-    this->votes = new thrust::device_vector<unsigned long>(scene->getModelPPFs()->size());
+    this->votes = new thrust::device_vector<unsigned long>(scene->getModelPPFs()->size(), 0);
 
     // vecs_old is an array of (soon to be) sorted translation vectors
     thrust::device_vector<float3> *vecs_old =
@@ -194,8 +194,7 @@ void Model::ppf_lookup(Scene *scene){
 
     // Step 5
     // Can almost represent this (and Step 4) as a reduction or transformation, but not quite.
-    thrust::device_vector<unsigned int> *accumulator =
-        new thrust::device_vector<unsigned int>(this->vecs->size()*N_ANGLE, 0);
+    this->accumulator = new thrust::device_vector<unsigned int>(this->vecs->size()*N_ANGLE, 0);
 
     blocks = std::min(((int)(this->vecs->size()) + BLOCK_SIZE - 1) / BLOCK_SIZE, MAX_NBLOCKS);
     ppf_reduce_rows_kernel<<<blocks,BLOCK_SIZE>>>(RAW_PTR(this->vecs),
@@ -207,13 +206,12 @@ void Model::ppf_lookup(Scene *scene){
                                                   this->vecs->size());
 
     // Steps 6, 7
-    thrust::device_vector<unsigned int> *maxidx =
-        new thrust::device_vector<unsigned int>(this->vecs->size());
+    this->maxidx = new thrust::device_vector<unsigned int>(this->vecs->size());
     rowwise_max(*accumulator, this->vecs->size(), N_ANGLE, *maxidx);
 
     thrust::device_vector<unsigned int> *scores =
         new thrust::device_vector<unsigned int>(this->vecs->size());
-    
+
     blocks = std::min(((int)(this->vecs->size()) + BLOCK_SIZE - 1) / BLOCK_SIZE, MAX_NBLOCKS);
     ppf_score_kernel<<<blocks,BLOCK_SIZE>>>(RAW_PTR(accumulator),
                                             RAW_PTR(maxidx),

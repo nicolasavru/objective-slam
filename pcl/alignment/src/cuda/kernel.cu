@@ -102,6 +102,7 @@ __device__ __forceinline__ void trans(float3 v, float T[4][4]){
 
 __device__ __forceinline__ void rotx(float theta, float T[4][4]){
     zeroMat4(T);
+    T[0][0] = 1;
     T[1][1] = cosf(theta);
     T[2][1] = sinf(theta);
     T[1][2] = -1*T[2][1];
@@ -292,7 +293,7 @@ __device__ void trans_model_scene(float3 m_r, float3 n_r_m, float3 m_i,
     u.x = 0;
     v.x = 0;
     float alpha = atan2f(cross(u, v).x, dot(u, v));
-    alpha_idx = (int)((alpha + CUDART_PI_F)/5);
+    alpha_idx = (int)((alpha + CUDART_PI_F)*N_ANGLE/(2*CUDART_PI_F));
     rotx(alpha, rot_x);
 
     invht(T_s_g, T_tmp);
@@ -337,6 +338,8 @@ __device__ void compute_transforms(unsigned int angle_idx, float3 m_r,
 
     m_r = discretize(m_r, D_DIST);
     m_r = times(-1, m_r);
+
+
 
     trans(m_r, transm);
     roty(m_roty, rot_y);
@@ -383,7 +386,10 @@ __global__ void ppf_kernel(float3 *points, float3 *norms, float4 *out, int count
             __syncthreads();
 
             for(int j = 0; j < bound; j++) {
-                if((j + i - idx) == 0) continue;
+                if((j + i - idx) == 0){
+                    out[idx*count + j + i].x = NAN;
+                    continue;
+                };
                 out[idx*count + j + i] = compute_ppf(thisPoint, thisNorm, Spoints[j], Snorms[j]);
                 out[idx*count + j + i] = disc_feature(out[idx*count + j + i], D_DIST, D_ANGLE0);
             }
@@ -401,7 +407,12 @@ __global__ void ppf_hash_kernel(float4 *ppfs, unsigned int *codes, int count){
     int idx = ind + blockIdx.x * blockDim.x;
 
     while(idx < count){
-        codes[idx] = hash(ppfs+idx, sizeof(float4));
+        if(ppfs[idx].x == NAN){
+            codes[idx] = 0;
+        }
+        else{
+            codes[idx] = hash(ppfs+idx, sizeof(float4));
+        }
 
         //grid stride
         idx += blockDim.x * gridDim.x;
@@ -457,7 +468,8 @@ __global__ void ppf_vote_kernel(unsigned int *sceneKeys, unsigned int *sceneIndi
     while(idx < count){
         unsigned int thisSceneKey = sceneKeys[idx];
         unsigned int thisSceneIndex = sceneIndices[idx];
-        if (thisSceneKey != hashKeys[thisSceneIndex]){
+        if (thisSceneKey == 0 ||
+            thisSceneKey != hashKeys[thisSceneIndex]){
             return;
         }
         unsigned int thisPPFCount = ppfCount[thisSceneIndex];
@@ -530,8 +542,9 @@ __global__ void ppf_reduce_rows_kernel(float3 *vecs, unsigned int *vecCounts,
         thisVecIndex = firstVecIndex[idx];
         for(int i = 0; i < thisVecCount; i++){
             vote      = votes[thisVecIndex+i];
+            if(vote == 0) continue;
             angle_idx = vote & low6;
-            accumulator[idx+angle_idx]++;
+            accumulator[idx*n_angle+angle_idx]++;
         }
         //grid stride
         idx += blockDim.x * gridDim.x;

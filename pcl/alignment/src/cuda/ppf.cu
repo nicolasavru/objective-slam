@@ -190,13 +190,25 @@ int ply_load_main(float3 *scenePoints, float3 *sceneNormals, int sceneN,
 
     model->ppf_lookup(scene);
 
+    // thrust::host_vector<unsigned int> *votes = new thrust::host_vector<unsigned int>(*model->votes);
+
+    // unsigned long low6 = ((unsigned long) -1) >> 58;
+    // for (int i=0; i<votes->size(); i++){
+    //     cout << "votes[" << i << "] = " << ((*votes)[i] & low6) << endl;
+    // }
+
+
     // copy ppfs back to host
     thrust::host_vector<float> *transformations = new thrust::host_vector<float>(*model->getTransformations());
+    thrust::host_vector<unsigned int> *maxidx = new thrust::host_vector<unsigned int>(*model->maxidx);
+    thrust::host_vector<unsigned int> *accumulator = new thrust::host_vector<unsigned int>(*model->accumulator);
 
     // write out transformations
-    for (int i=0; i<10; i++){
-        cout << "Transformtion[" << i << "]" << endl;
-        cout << "[";
+    for (int i=0; i<maxidx->size(); i++){
+        cout << "trans_vec[" << i << "]" << endl;
+        cout << "angle_idx: " << (*maxidx)[i] << endl;
+        cout << "num_votes: " << (*accumulator)[i] << endl;
+        cout << "transform = [";
         for (int j=0; j<4; j++){
             for (int k=0; k<4; k++){
                 cout << (*transformations)[i*16+j*4+k] << " ";
@@ -206,6 +218,24 @@ int ply_load_main(float3 *scenePoints, float3 *sceneNormals, int sceneN,
         cout << "]" << endl;
         cout << endl << endl;
     }
+
+
+    // // copy ppfs back to host
+    // thrust::host_vector<float> *transformations = new thrust::host_vector<float>(*model->getTransformations());
+
+    // // write out transformations
+    // for (int i=0; i<transformations->size()/16; i++){
+    //     cout << "Transformtion[" << i << "]" << endl;
+    //     cout << "[";
+    //     for (int j=0; j<4; j++){
+    //         for (int k=0; k<4; k++){
+    //             cout << (*transformations)[i*16+j*4+k] << " ";
+    //         }
+    //         cout << ";" << endl;
+    //     }
+    //     cout << "]" << endl;
+    //     cout << endl << endl;
+    // }
 
     // Deallocate ram
 //    delete points;
