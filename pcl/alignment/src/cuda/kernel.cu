@@ -2,7 +2,6 @@
 #include <cuda.h>
 #include <cuda_runtime.h>                // Stops underlining of __global__
 #include <device_launch_parameters.h>    // Stops underlining of threadIdx etc.
-
 #include "kernel.h"
 
 // FNV-1a hash function
@@ -377,7 +376,7 @@ __global__ void ppf_kernel(float3 *points, float3 *norms, float4 *out, int count
 
         for(int i = 0; i < count; i+=BLOCK_SIZE){
 
-            bound = min(count - i, BLOCK_SIZE);
+            bound = MIN(count - i, BLOCK_SIZE);
 
             if (ind < bound){
                 Spoints[ind] = points[i+ind];
@@ -387,7 +386,7 @@ __global__ void ppf_kernel(float3 *points, float3 *norms, float4 *out, int count
 
             for(int j = 0; j < bound; j++) {
                 if((j + i - idx) == 0){
-                    out[idx*count + j + i].x = NAN;
+                    out[idx*count + j + i].x = CUDART_NAN_F;
                     continue;
                 };
                 out[idx*count + j + i] = compute_ppf(thisPoint, thisNorm, Spoints[j], Snorms[j]);
@@ -407,7 +406,7 @@ __global__ void ppf_hash_kernel(float4 *ppfs, unsigned int *codes, int count){
     int idx = ind + blockIdx.x * blockDim.x;
 
     while(idx < count){
-        if(ppfs[idx].x == NAN){
+        if(ppfs[idx].x == CUDART_NAN_F){
             codes[idx] = 0;
         }
         else{

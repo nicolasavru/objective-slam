@@ -34,5 +34,5 @@ endif()
 set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS} "--ftz=true --prec-div=false --prec-sqrt=false -arch=sm_35")
 CUDA_COMPILE(cuda_objs ${cuda})
 
-add_executable (alignment src/alignment.cpp ${cuda_objs})
+add_executable (alignment src/alignment.cpp ${cuda})
 target_link_libraries (alignment ${PCL_LIBRARIES} ${CUDA_LIBRARIES})
