@@ -335,10 +335,8 @@ __device__ void compute_transforms(unsigned int angle_idx, float3 m_r,
 
     float (*T_arr)[4] = (float (*)[4])T;
 
-    m_r = discretize(m_r, D_DIST);
+    // m_r = discretize(m_r, D_DIST);
     m_r = times(-1, m_r);
-
-
 
     trans(m_r, transm);
     roty(m_roty, rot_y);
@@ -353,7 +351,7 @@ __device__ void compute_transforms(unsigned int angle_idx, float3 m_r,
     mat4f_mul(rot_z, rot_y, T_tmp);
     mat4f_mul(T_tmp, transm, T_s_g);
 
-    rotx(angle_idx*2*CUDART_PI_F/N_ANGLE, rot_x);
+    rotx(angle_idx*2*CUDART_PI_F/(N_ANGLE-1), rot_x);
     invht(T_s_g, T_tmp);
     mat4f_mul(T_tmp, rot_x, T_tmp2);
     mat4f_mul(T_tmp2, T_m_g, T_arr);
@@ -497,7 +495,6 @@ __global__ void ppf_vote_kernel(unsigned int *sceneKeys, unsigned int *sceneIndi
             votes[thisFirstPPFIndex + i] =
                 (((unsigned long) scene_r_index) << 32) | (model_r_index << 6) | (alpha_idx);
             // begin step 2 of algorithm here
-            trans_vec.y = 5;
             vecs_old[thisFirstPPFIndex + i] = trans_vec;
         }
 
@@ -611,9 +608,12 @@ __global__ void trans_calc_kernel(float3 *vecs, unsigned int *vecCounts,
     float s_roty = 0;
     float s_rotz = 0;
 
+    int c;
+
     while(idx < count){
         thisVecCount = vecCounts[idx];
         thisFirstVecIndex = firstVecIndex[idx];
+        c = 0;
 
         for(int i = 0; i < thisVecCount; i++){
             vote = votes[thisFirstVecIndex+i];
@@ -622,25 +622,26 @@ __global__ void trans_calc_kernel(float3 *vecs, unsigned int *vecCounts,
 
             scene_point_idx = (unsigned int) ((vote & hi32) >> 32);
             model_point_idx = (unsigned int) ((vote & model_point_mask) >> 6);
-//            model_point_idx &= ~(((unsigned int) 1) << 31);
             compute_rot_angles(model_normals[model_point_idx],
                                scene_normals[scene_point_idx],
                                &m_roty_t, &m_rotz_t, &s_roty_t, &s_rotz_t);
 
             // running average
-            m_roty = (m_roty_t + i*m_roty)/(i+1);
-            m_rotz = (m_rotz_t + i*m_rotz)/(i+1);
-            s_roty = (s_roty_t + i*s_roty)/(i+1);
-            s_rotz = (s_rotz_t + i*s_rotz)/(i+1);
+            m_roty = (m_roty_t + c*m_roty)/(c+1);
+            m_rotz = (m_rotz_t + c*m_rotz)/(c+1);
+            s_roty = (s_roty_t + c*s_roty)/(c+1);
+            s_rotz = (s_rotz_t + c*s_rotz)/(c+1);
+            c++;
         }
 
+        angle_idx = (unsigned int) (votes[thisFirstVecIndex] & low6);
         scene_point_idx = (unsigned int) ((votes[thisFirstVecIndex] & hi32) >> 32);
         model_point_idx = (unsigned int) ((votes[thisFirstVecIndex] & model_point_mask) >> 6);
 
-         compute_transforms(angle_idx, model_points[model_point_idx],
-                            m_roty, m_rotz,
-                            scene_points[scene_point_idx],
-                            s_roty, s_rotz, ((float *) transforms + idx*16));
+        compute_transforms(angle_idx, model_points[model_point_idx],
+                           m_roty, m_rotz,
+                           scene_points[scene_point_idx],
+                           s_roty, s_rotz, ((float *) transforms + idx*16));
 
         //grid stride
         idx += blockDim.x * gridDim.x;
