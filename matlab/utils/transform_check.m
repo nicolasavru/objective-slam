@@ -98,6 +98,6 @@ alpha = atan2(w'*cross(u_hat,v_hat),u_hat'*v_hat);
 % generate rotation matrix for rotating m_i into s_i
 m_i_final = rotx(alpha)*[m_in 1]';
 m_i_final = m_i_final(1:3)';
-plot3(m_i_final(1),m_i_final(2),m_i_final(3),'ob','markerfacecolor','b')
+plot3(m_i_final(1),m_i_final(2),m_i_final(3),'or','markerfacecolor','r')
 axis equal
 cameratoolbar
