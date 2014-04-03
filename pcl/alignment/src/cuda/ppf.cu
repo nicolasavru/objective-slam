@@ -22,6 +22,8 @@ using namespace std;
 #include <thrust/iterator/constant_iterator.h>
 #include <thrust/scan.h>
 
+#include <Eigen/Core>
+
 void test_histogram(char *point_path, int N){
     FILE *points_fin;
     size_t result1;
@@ -147,9 +149,9 @@ int ply_load_main(char *point_path, char *norm_path, int N, int devUse){
     return 0;
 }
 
-int ply_load_main(float3 *scenePoints, float3 *sceneNormals, int sceneN,
-                  float3 *objectPoints, float3 *objectNormals, int objectN,
-                  int devUse){
+Eigen::Matrix4f ply_load_main(float3 *scenePoints, float3 *sceneNormals, int sceneN,
+                              float3 *objectPoints, float3 *objectNormals, int objectN,
+                              int devUse){
     int numDevices;
     cudaGetDeviceCount(&numDevices);
     fprintf(stderr, "numDevices: %d\n", numDevices);
@@ -214,6 +216,7 @@ int ply_load_main(float3 *scenePoints, float3 *sceneNormals, int sceneN,
         cout << "num_votes: " << (*accumulator)[i*N_ANGLE+(*maxidx)[i]] << endl;
         if((*accumulator)[i*N_ANGLE+(*maxidx)[i]] > m){
             m_idx = i;
+            m = (*accumulator)[i*N_ANGLE+(*maxidx)[i]];
         }
         cout << "transforms(:,:," << i+1 << ") = [";
         for (int j=0; j<4; j++){
@@ -224,6 +227,13 @@ int ply_load_main(float3 *scenePoints, float3 *sceneNormals, int sceneN,
         }
         cout << "];" << endl;
         cout << endl << endl;
+    }
+
+    Eigen::Matrix4f T;
+    for (int j=0; j<4; j++){
+        for (int k=0; k<4; k++){
+            T(j,k) = (*transformations)[m_idx*16+j*4+k];
+        }
     }
 
 
@@ -254,7 +264,7 @@ int ply_load_main(float3 *scenePoints, float3 *sceneNormals, int sceneN,
 
     cudaDeviceReset();
 
-    return 0;
+    return T;
 }
 
 // int ppf_run(Eigen::MatrixXf &points, Eigen::MatrixXf &normals){
