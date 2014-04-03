@@ -3,6 +3,7 @@
 clear all; close all; clc;
 
 [chair1_tri,chair1_pts] = ply_read('../ply/chair1.ply','tri');
+[~,chair1_pts] = ply_read('../ply/chair1_centered.ply','tri');
 chair1_pts = chair1_pts.';
 chair1_tri = chair1_tri.';
 % trisurf(chair1_tri,chair1_pts(:,1),chair1_pts(:,2),chair1_pts(:,3), ...
