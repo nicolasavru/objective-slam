@@ -58,6 +58,7 @@ Model::Model(thrust::host_vector<float3> *points, thrust::host_vector<float3> *n
 
     this->hashKeys = new thrust::device_vector<unsigned int>();
     this->ppfCount = new thrust::device_vector<unsigned int>();
+    std::cerr << "hashkey_bins:" << std::endl;
     histogram_destructive(*hashKeys_old, *(this->hashKeys), *(this->ppfCount));
     delete hashKeys_old;
 
@@ -108,8 +109,9 @@ void Model::ppf_lookup(Scene *scene){
     this->votes = new thrust::device_vector<unsigned long>(scene->getModelPPFs()->size(), 0);
 
     // vecs_old is an array of (soon to be) sorted translation vectors
+    float3 null_float3 = {0, 0, 0};
     thrust::device_vector<float3> *vecs_old =
-        new thrust::device_vector<float3>(scene->getModelPPFs()->size());
+        new thrust::device_vector<float3>(scene->getModelPPFs()->size(), null_float3);
 
     // populates parallel arrays votes and vecs_old
     int blocks = std::min(((int)(scene->getHashKeys()->size()) + BLOCK_SIZE - 1) / BLOCK_SIZE, MAX_NBLOCKS);
@@ -141,6 +143,7 @@ void Model::ppf_lookup(Scene *scene){
     thrust::sort_by_key(vecs_old->begin(), vecs_old->end(), votes->begin());
     this->vecs = new thrust::device_vector<float3>();
     this->vecCounts = new thrust::device_vector<unsigned int>();
+    std::cerr << "vec_bins:" << std::endl;
     histogram_destructive(*vecs_old, *(this->vecs), *(this->vecCounts));
     this->firstVecIndex = new thrust::device_vector<unsigned int>(this->vecs->size());
     thrust::exclusive_scan(this->vecCounts->begin(),
@@ -195,6 +198,7 @@ void Model::ppf_lookup(Scene *scene){
     // Step 5
     // Can almost represent this (and Step 4) as a reduction or transformation, but not quite.
     this->accumulator = new thrust::device_vector<unsigned int>(this->vecs->size()*N_ANGLE, 0);
+    std::cout << "vecs_size:" << this->vecs->size() << std::endl;
 
     blocks = std::min(((int)(this->vecs->size()) + BLOCK_SIZE - 1) / BLOCK_SIZE, MAX_NBLOCKS);
     ppf_reduce_rows_kernel<<<blocks,BLOCK_SIZE>>>(RAW_PTR(this->vecs),
