@@ -36,7 +36,7 @@ __global__ void ppf_vote_kernel(unsigned int *sceneKeys, unsigned int *sceneIndi
                                 unsigned int *firstPPFIndex, unsigned int *key2ppfMap,
                                 float3 *modelPoints, float3 *modelNormals, int modelSize,
                                 float3 *scenePoints, float3 *sceneNormals, int sceneSize,
-                                unsigned long *votes, unsigned long *truncVotes, int count);
+                                unsigned long *votes, int count);
 
 __global__ void ppf_reduce_rows_kernel(unsigned long *votes, unsigned int *voteCounts,
                                        unsigned int *firstVoteIndex,

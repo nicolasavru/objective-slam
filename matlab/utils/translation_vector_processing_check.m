@@ -10,7 +10,7 @@ clear all; close all; clc;
 % assuming you're in the directory containing the relevant .ply file
 
 % read in a center the model
-[chair1_tri,chair1_pts] = ply_read('chair1.ply','tri');
+[chair1_tri,chair1_pts] = ply_read('../../ply/chair1.ply','tri');
 chair1_pts = chair1_pts';
 chair1_tri = chair1_tri';
 
@@ -38,7 +38,7 @@ scene_vn  = scene_vn(1:3,:)' - scene_pts;
 figure
 plot3(chair1_pts(:,1),chair1_pts(:,2),chair1_pts(:,3),'.k'), hold on
 plot3(scene_pts(:,1),scene_pts(:,2),scene_pts(:,3),'.r')
-axis square
+% axis square
 cameratoolbar
 
 % now let's pick some matching pairs
@@ -46,9 +46,9 @@ Npairs = 100;
 % 2 case: 1) Npairs scene reference points 2) one reference point
 % UNCOMMENT CASE OF INTEREST
 % 1) Npairs scene reference points
-% pairs  = round(size(scene_pts,1)*rand(Npairs,2));
+pairs  = round(size(scene_pts,1)*rand(Npairs,2));
 % 2) 1 scene reference point
-pairs  = round([size(scene_pts,1)*rand*ones(Npairs,1) size(scene_pts,1)*rand(Npairs,1)]);
+% pairs  = round([size(scene_pts,1)*rand*ones(Npairs,1) size(scene_pts,1)*rand(Npairs,1)]);
 
 pairs(logical(pairs(:,1) == pairs(:,2))) = [];
 
@@ -57,6 +57,8 @@ plot3(chair1_pts(pairs(:,2),1),chair1_pts(pairs(:,2),2),chair1_pts(pairs(:,2),3)
 
 plot3(scene_pts(pairs(:,1),1),scene_pts(pairs(:,1),2),scene_pts(pairs(:,1),3),'.c')
 plot3(scene_pts(pairs(:,2),1),scene_pts(pairs(:,2),2),scene_pts(pairs(:,2),3),'.g')
+axis equal;
+axis
 
 % check consistency of transformation for pairs between model and scene
 check_alpha = zeros(Npairs,1);
@@ -75,7 +77,7 @@ for ii = 1:Npairs
     [T_m_g T_s_g]
     check_alpha(ii) = alpha;
     
-    pause
+%     pause
 end
 bins  = linspace(-pi,pi,100);
 tmp   = histc(check_alpha,bins);

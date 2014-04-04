@@ -204,14 +204,14 @@ Eigen::Matrix4f ply_load_main(float3 *scenePoints, float3 *sceneNormals, int sce
     thrust::host_vector<float> *transformations = new thrust::host_vector<float>(*model->getTransformations());
     thrust::host_vector<unsigned int> *maxidx = new thrust::host_vector<unsigned int>(*model->maxidx);
     thrust::host_vector<unsigned int> *accumulator = new thrust::host_vector<unsigned int>(*model->accumulator);
-    thrust::host_vector<float3> *vecs = new thrust::host_vector<float3>(*model->vecs);
+//    thrust::host_vector<float3> *vecs = new thrust::host_vector<float3>(*model->vecs);
 
     // write out transformations
     int m = 0;
     int m_idx = 0;
     for (int i=0; i<maxidx->size(); i++){
-        cout << "trans_vec[" << i << "] = [" <<
-            (*vecs)[i].x << ", " << (*vecs)[i].y << ", " << (*vecs)[i].z << "]" << endl;
+//        cout << "trans_vec[" << i << "] = [" <<
+//            (*vecs)[i].x << ", " << (*vecs)[i].y << ", " << (*vecs)[i].z << "]" << endl;
         cout << "angle_idx: " << (*maxidx)[i] << endl;
         cout << "num_votes: " << (*accumulator)[i*N_ANGLE+(*maxidx)[i]] << endl;
         if((*accumulator)[i*N_ANGLE+(*maxidx)[i]] > m){

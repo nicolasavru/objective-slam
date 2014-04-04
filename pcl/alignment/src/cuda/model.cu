@@ -108,8 +108,6 @@ void Model::ppf_lookup(Scene *scene){
     unsigned int lastIndex, lastCount;
     thrust::device_vector<unsigned long> *votes_old = new thrust::device_vector<unsigned long>(scene->getModelPPFs()->size(),0);
 
-    // truncVotes is an array that will hold scene reference point and model point match info
-    thrust::device_vector<unsigned long> *truncVotes = new thrust::device_vector<unsigned long>(scene->getModelPPFs()->size(), 0);
     // populates parallel arrays votes and vecs_old
     int blocks = std::min(((int)(scene->getHashKeys()->size()) + BLOCK_SIZE - 1) / BLOCK_SIZE, MAX_NBLOCKS);
     std::cout << "blocks: " << blocks << std::endl;
@@ -120,8 +118,7 @@ void Model::ppf_lookup(Scene *scene){
          RAW_PTR(this->modelPoints), RAW_PTR(this->modelNormals),
          this->n, RAW_PTR(scene->getModelPoints()),
          RAW_PTR(scene->getModelNormals()), scene->numPoints(),
-         RAW_PTR(votes_old), RAW_PTR(truncVotes),
-         scene->getHashKeys()->size());
+         RAW_PTR(votes_old), scene->getHashKeys()->size());
 
 #ifdef DEBUG
     {
@@ -137,15 +134,22 @@ void Model::ppf_lookup(Scene *scene){
     }
 #endif
 
-    thrust::sort_by_key(truncVotes->begin(), truncVotes->end(), votes_old->begin());
+    thrust::sort(votes_old->begin(), votes_old->end());
     this->votes = new thrust::device_vector<unsigned long>();
     this->voteCounts = new thrust::device_vector<unsigned int>();
     std::cerr << "vote_bins:" << std::endl;
     histogram_destructive(*votes_old, *(this->votes), *(this->voteCounts));
+    delete votes_old;
+
     this->firstVoteIndex = new thrust::device_vector<unsigned int>(this->votes->size());
     thrust::exclusive_scan(this->voteCounts->begin(),
                            this->voteCounts->end(),
                            this->firstVoteIndex->begin());
+
+//    for (int i=0; i<this->firstVoteIndex->size(); i++){
+//        std::cout << (*this->voteCounts->)
+//        std::cout << (*this->firstVoteIndex)[i] << std::endl;
+//    }
 
     // // populates voteCodes and voteCounts, sorts votes
     // this->accumulateVotes();
@@ -205,7 +209,7 @@ void Model::ppf_lookup(Scene *scene){
 
     // Steps 6, 7
     this->maxidx = new thrust::device_vector<unsigned int>(this->votes->size());
-    rowwise_max(*accumulator, this->votes->size(), N_ANGLE, *maxidx);
+    rowwise_max(*this->accumulator, this->votes->size(), N_ANGLE, *maxidx);
 
     thrust::device_vector<unsigned int> *scores =
         new thrust::device_vector<unsigned int>(this->votes->size());

@@ -14,6 +14,9 @@ chair1_tri = chair1_tri.';
 TR = triangulation(chair1_tri, chair1_pts);
 chair1_vn = vertexNormal(TR);
 
+% chair1_pts = chair1_pts - repmat(mean(chair1_pts,2),[1 size(chair1_pts,2)]);
+
+
 disp('Chair Model Loaded and Normals Computed');
 
 model_N = 2500;
@@ -36,6 +39,7 @@ hold on
 
 quiver3(chair1_pts(1:model_N:end,1),chair1_pts(1:model_N:end,2),chair1_pts(1:model_N:end,3),...
      chair1_vn(1:model_N:end,1),chair1_vn(1:model_N:end,2),chair1_vn(1:model_N:end,3),0.5,'color','b');
+cameratoolbar;
 hold off
 
 figure;

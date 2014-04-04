@@ -31,6 +31,28 @@ typedef pcl::PPFEstimation<PointNT, PointNT, FeatureT> FeatureEstimationT;
 typedef pcl::PointCloud<FeatureT> FeatureCloudT;
 typedef pcl::visualization::PointCloudColorHandlerCustom<PointNT> ColorHandlerT;
 
+void downsample_cloud(PointCloudT::Ptr cloud, float scale){
+    pcl::VoxelGrid<PointNT> grid;
+    float leaf = scale;
+    grid.setLeafSize(leaf, leaf, leaf);
+    std::cerr << "cloud before filtering: " << cloud->width*cloud->height
+              << " data points (" << pcl::getFieldsList(*cloud) << ")."
+              << std::endl;
+    grid.setInputCloud(cloud);
+    grid.filter(*cloud);
+    std::cerr << "cloud after filtering: " << cloud->width*cloud->height
+              << " data points (" << pcl::getFieldsList(*cloud) << ")."
+              << std::endl;
+}
+
+PointCloudT::Ptr downsample_cloud_stupid(PointCloudT::Ptr cloud, int scale){
+    PointCloudT::Ptr out(new PointCloudT);
+    for(PointCloudT::iterator it = cloud->begin(); it < cloud->end(); it+=scale){
+        out->push_back(*it);
+    }
+    return out;
+}
+
 // Align a rigid object to a scene with clutter and occlusions
 int main(int argc, char **argv){
     // Point clouds
@@ -67,43 +89,31 @@ int main(int argc, char **argv){
         return (1);
     }
 
-    // Downsample
-    pcl::console::print_highlight("Downsampling...\n");
-    pcl::VoxelGrid<PointNT> grid;
-    float leaf = 0.03f;
-    grid.setLeafSize(leaf, leaf, leaf);
-    std::cerr << "object before filtering: " << object->width * object->height
-            << " data points (" << pcl::getFieldsList(*object) << ")."
-            << std::endl;
-    grid.setInputCloud(object);
-    grid.filter(*object);
-    std::cerr << "object after filtering: " << object->width * object->height
-            << " data points (" << pcl::getFieldsList(*object) << ")."
-            << std::endl;
-    leaf = 0.05f;
-    grid.setLeafSize(leaf, leaf, leaf);
-    std::cerr << "scene before filtering: " << scene->width * scene->height
-            << " data points (" << pcl::getFieldsList(*scene) << ")."
-            << std::endl;
-    grid.setInputCloud(scene);
-    grid.filter(*scene);
-    std::cerr << "scene after filtering: " << scene->width * scene->height
-            << " data points (" << pcl::getFieldsList(*scene) << ")."
-            << std::endl;
-
     // Estimate normals for object
-    pcl::console::print_highlight("Estimating object normals...\n");
-    pcl::NormalEstimationOMP<PointNT, PointNT> nest_obj;
-    nest_obj.setRadiusSearch(0.2);
-    nest_obj.setInputCloud(object);
-    nest_obj.compute(*object);
+//    pcl::console::print_highlight("Estimating object normals...\n");
+//    pcl::NormalEstimationOMP<PointNT, PointNT> nest_obj;
+//    nest_obj.setRadiusSearch(0.02);
+//    nest_obj.setInputCloud(object);
+//    nest_obj.compute(*object);
 
     // Estimate normals for scene
-    pcl::console::print_highlight("Estimating scene normals...\n");
-    pcl::NormalEstimationOMP<PointNT, PointNT> nest_scene;
-    nest_scene.setRadiusSearch(0.2);
-    nest_scene.setInputCloud(scene);
-    nest_scene.compute(*scene);
+//    pcl::console::print_highlight("Estimating scene normals...\n");
+//    pcl::NormalEstimationOMP<PointNT, PointNT> nest_scene;
+//    nest_scene.setRadiusSearch(0.1);
+//    nest_scene.setInputCloud(scene);
+//    nest_scene.compute(*scene);
+
+//    for(PointCloudT::iterator it = scene->begin(); it < scene->end(); it++){
+//        std::cout << (*it) << std::endl;
+//    }
+
+    // Downsample
+    pcl::console::print_highlight("Downsampling...\n");
+    // downsample_cloud(object, 0.03f);
+    // downsample_cloud(scene, 0.03f);
+    // TODO: stop leaking memory
+//    object = downsample_cloud_stupid(object, 500);
+//    scene = downsample_cloud_stupid(scene, 500);
 
     // TODO: Check for malloc errors
     float3 *scene_points = (float3 *) malloc(scene->points.size()*sizeof(float3));
@@ -131,17 +141,26 @@ int main(int argc, char **argv){
                                       object_normals, object->points.size(), 0);
 
     cout << T << endl;
-    pcl::transformPointCloudWithNormals(*object, *object_aligned, T);
+//    pcl::transformPointCloudWithNormals(*object, *object_aligned, T);
+    pcl::transformPointCloud(*object, *object_aligned, T);
     boost::shared_ptr<pcl::visualization::PCLVisualizer> viewer (new pcl::visualization::PCLVisualizer ("3D Viewer"));
     viewer->setBackgroundColor (0, 0, 0);
-    viewer->addPointCloud<PointNT> (scene, "scene");
+    ColorHandlerT blue_color(object, 0, 0, 255);
+    viewer->addPointCloud<PointNT> (scene, blue_color, "scene");
+//    viewer->addPointCloudNormals<PointNT>(scene, 1, 0.02, "scene_normals", 0);
+//    viewer->addPointCloudNormals<PointNT, PointNT> (scene, scene, 1, 0.02, "scene_normals", 0);
+
     ColorHandlerT red_color(object, 255, 0, 0);
     viewer->addPointCloud<PointNT> (object, red_color, "object");
-    viewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "object");
+//    viewer->addPointCloudNormals<PointNT, PointNT> (object, 1, 0.02, "object_normals");
+//    viewer->addPointCloudNormals<PointNT>(object, 1, 0.02, "object_normals", 0);
+    viewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, .5, "object");
+
     ColorHandlerT green_color(object_aligned, 0, 255, 0);
     viewer->addPointCloud<PointNT> (object_aligned, green_color, "object_aligned");
+//    viewer->addPointCloudNormals<PointNT, PointNT> (object_aligned, object_aligned, 1, 0.02, "object_aligned_normals");
     viewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "object_aligned");
-    viewer->addCoordinateSystem (1.0, "foo", 0);
+    viewer->addCoordinateSystem (1.0, 0);
     viewer->initCameraParameters ();
 
     while (!viewer->wasStopped ()){

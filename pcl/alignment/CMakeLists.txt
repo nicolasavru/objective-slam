@@ -31,7 +31,7 @@ if(NOT UNIX OR APPLE)
     add_definitions(-DPCLAPI_EXPORTS)
 endif()
 
-set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS} "--ftz=true --prec-div=false --prec-sqrt=false -arch=sm_35")
+set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS} "--ftz=true --prec-div=false --prec-sqrt=false -arch=sm_35 -w")
 CUDA_COMPILE(cuda_objs ${cuda})
 
 if (WIN32)
