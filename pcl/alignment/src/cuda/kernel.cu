@@ -256,7 +256,6 @@ __device__ void trans_model_scene(float3 m_r, float3 n_r_m, float3 m_i,
     float transm[4][4], rot_x[4][4], rot_y[4][4], rot_z[4][4], T_tmp[4][4], T_m_g[4][4], T_s_g[4][4],
     T_tmp2[4][4], T[4][4];
     float4 n_tmp;
-    float3 s_r_transformed;
 
     // probably not necessary due to PCL resampling onto voxel grid
     // m_r = discretize(m_r, d_dist);

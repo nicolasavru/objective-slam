@@ -106,11 +106,10 @@ void Model::ppf_lookup(Scene *scene){
     // Steps 1-3
     // launch voting kernel instance for each scene reference point
     unsigned int lastIndex, lastCount;
-    thrust::device_vector<unsigned long> votes_old = new thrust::device_vector<unsigned long>(scene->getModelPPFs()->size(), 0);
+    thrust::device_vector<unsigned long> *votes_old = new thrust::device_vector<unsigned long>(scene->getModelPPFs()->size(),0);
 
     // truncVotes is an array that will hold scene reference point and model point match info
-    thrust::device_vector<unsigned long> truncVotes =
-            new thrust::device_vector<unsigned long>(scene->getModelPPFs()->size(), 0);
+    thrust::device_vector<unsigned long> *truncVotes = new thrust::device_vector<unsigned long>(scene->getModelPPFs()->size(), 0);
     // populates parallel arrays votes and vecs_old
     int blocks = std::min(((int)(scene->getHashKeys()->size()) + BLOCK_SIZE - 1) / BLOCK_SIZE, MAX_NBLOCKS);
     std::cout << "blocks: " << blocks << std::endl;
@@ -224,7 +223,7 @@ void Model::ppf_lookup(Scene *scene){
 
     blocks = std::min(((int)(this->votes->size()) + BLOCK_SIZE - 1) / BLOCK_SIZE, MAX_NBLOCKS);
     trans_calc_kernel<<<blocks,BLOCK_SIZE>>>
-             (RAW_PTR(this->votes), RAW_PTR(this->VoteCounts),
+             (RAW_PTR(this->votes), RAW_PTR(this->voteCounts),
               RAW_PTR(this->firstVoteIndex),
               RAW_PTR(maxidx), RAW_PTR(scores),
               N_ANGLE,

@@ -36,11 +36,10 @@ __global__ void ppf_vote_kernel(unsigned int *sceneKeys, unsigned int *sceneIndi
                                 unsigned int *firstPPFIndex, unsigned int *key2ppfMap,
                                 float3 *modelPoints, float3 *modelNormals, int modelSize,
                                 float3 *scenePoints, float3 *sceneNormals, int sceneSize,
-                                unsigned long *votes, float3 *vecs_old, int count);
+                                unsigned long *votes, unsigned long *truncVotes, int count);
 
-__global__ void ppf_reduce_rows_kernel(float3 *vecs, unsigned int *vecCounts,
-                                       unsigned int *firstVecIndex,
-                                       unsigned long *votes,
+__global__ void ppf_reduce_rows_kernel(unsigned long *votes, unsigned int *voteCounts,
+                                       unsigned int *firstVoteIndex,
                                        int n_angle,
                                        unsigned int *accumulator,
                                        int count);
@@ -51,8 +50,8 @@ __global__ void ppf_score_kernel(unsigned int *accumulator,
                                  unsigned int *scores,
                                  int count);
 
-__global__ void trans_calc_kernel(float3 *vecs, unsigned int *vecCounts,
-                                  unsigned int *firstVecIndex, unsigned long *votes,
+__global__ void trans_calc_kernel(unsigned long *votes, unsigned int *voteCounts,
+                                  unsigned int *firstVoteIndex,
                                   unsigned int *maxidx, unsigned int *scores, int n_angle,
                                   float3 *model_points, float3 *model_normals, int model_size,
                                   float3 *scene_points, float3 *scene_normals, int scene_size,
