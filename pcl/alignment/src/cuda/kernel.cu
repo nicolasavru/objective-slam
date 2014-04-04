@@ -252,8 +252,7 @@ __device__ __forceinline__ void invht(float T[4][4], float T_inv[4][4]){
 
 __device__ void trans_model_scene(float3 m_r, float3 n_r_m, float3 m_i,
                                   float3 s_r, float3 n_r_s, float3 s_i,
-                                  float d_dist, float3 &trans_vec,
-                                  unsigned int &alpha_idx){
+                                  float d_dist, unsigned int &alpha_idx){
     float transm[4][4], rot_x[4][4], rot_y[4][4], rot_z[4][4], T_tmp[4][4], T_m_g[4][4], T_s_g[4][4],
     T_tmp2[4][4], T[4][4];
     float4 n_tmp;
@@ -299,12 +298,6 @@ __device__ void trans_model_scene(float3 m_r, float3 n_r_m, float3 m_i,
     mat4f_mul(T_tmp, rot_x, T_tmp2);    //POTENTIALLY SLOW
     mat4f_mul(T_tmp2, T_m_g, T);        //POTENTIALLY SLOW
     // T is T_ms
-
-    trans_vec.x = T[0][3];
-    trans_vec.y = T[1][3];
-    trans_vec.z = T[2][3];
-    //think about discretization size and smoothing...
-    trans_vec = discretize(trans_vec, D_DIST);
 }
 
 __device__ void compute_rot_angles(float3 n_r_m, float3 n_r_s,
@@ -454,13 +447,12 @@ __global__ void ppf_vote_kernel(unsigned int *sceneKeys, unsigned int *sceneIndi
                                 unsigned int *firstPPFIndex, unsigned int *key2ppfMap,
                                 float3 *modelPoints, float3 *modelNormals, int modelSize,
                                 float3 *scenePoints, float3 *sceneNormals, int sceneSize,
-                                unsigned long *votes, float3 *vecs_old, int count){
+                                unsigned long *votes_old, unsigned long *truncVotes, int count){
     if(count <= 1) return;
 
     int ind = threadIdx.x;
     int idx = ind + blockIdx.x * blockDim.x;
     unsigned int alpha_idx;
-    float3 trans_vec;
 
     while(idx < count){
         unsigned int thisSceneKey = sceneKeys[idx];
@@ -491,11 +483,11 @@ __global__ void ppf_vote_kernel(unsigned int *sceneKeys, unsigned int *sceneIndi
 
             trans_model_scene(model_r_point, model_r_norm, model_i_point,
                               scene_r_point, scene_r_norm, scene_i_point,
-                              D_DIST, trans_vec, alpha_idx);
-            votes[thisFirstPPFIndex + i] =
+                              D_DIST, alpha_idx);
+            votes_old[thisFirstPPFIndex + i] =
                 (((unsigned long) scene_r_index) << 32) | (model_r_index << 6) | (alpha_idx);
-            // begin step 2 of algorithm here
-            vecs_old[thisFirstPPFIndex + i] = trans_vec;
+            truncVotes[thisFirstPPFIndex + i] = 
+            (((unsigned long) scene_r_index) << 26) | model_r_index;
         }
 
         idx += blockDim.x * gridDim.x;
@@ -515,9 +507,8 @@ __global__ void ppf_vote_kernel(unsigned int *sceneKeys, unsigned int *sceneIndi
  */
 
 // TODO: increase thread work
-__global__ void ppf_reduce_rows_kernel(float3 *vecs, unsigned int *vecCounts,
-                                       unsigned int *firstVecIndex,
-                                       unsigned long *votes,
+__global__ void ppf_reduce_rows_kernel(unsigned long *votes, unsigned int *voteCounts,
+                                       unsigned int *firstVoteIndex,
                                        int n_angle,
                                        unsigned int *accumulator,
                                        int count){
@@ -525,19 +516,17 @@ __global__ void ppf_reduce_rows_kernel(float3 *vecs, unsigned int *vecCounts,
 
     int ind = threadIdx.x;
     int idx = ind + blockIdx.x * blockDim.x;
-    float3 thisVec;
-    unsigned int thisVecCount, thisVecIndex;
+    unsigned int thisVoteCount, thisVoteIndex;
     int angle_idx;
-    unsigned int vote;
+    unsigned long vote;
 
     unsigned long low6 = ((unsigned long) -1) >> 58;
 
     while(idx < count){
-        thisVec = vecs[idx];
-        thisVecCount = vecCounts[idx];
-        thisVecIndex = firstVecIndex[idx];
-        for(int i = 0; i < thisVecCount; i++){
-            vote      = votes[thisVecIndex+i];
+        thisVoteCount = voteCounts[idx];
+        thisVoteIndex = firstVoteIndex[idx];
+        for(int i = 0; i < thisVoteCount; i++){
+            vote      = votes[thisVoteIndex+i];
             if(vote == 0) continue;
             angle_idx = vote & low6;
             accumulator[idx*n_angle+angle_idx]++;
@@ -583,8 +572,8 @@ __global__ void ppf_score_kernel(unsigned int *accumulator,
 //   find possible starting indices of blocks matching Model hashKeys
 
 // TODO: increase thread work
-__global__ void trans_calc_kernel(float3 *vecs, unsigned int *vecCounts,
-                                  unsigned int *firstVecIndex, unsigned long *votes,
+__global__ void trans_calc_kernel(unsigned long *votes, unsigned int *voteCounts,
+                                  unsigned int *firstVoteIndex,
                                   unsigned int *maxidx, unsigned int *scores, int n_angle,
                                   float3 *model_points, float3 *model_normals, int model_size,
                                   float3 *scene_points, float3 *scene_normals, int scene_size,
@@ -594,7 +583,7 @@ __global__ void trans_calc_kernel(float3 *vecs, unsigned int *vecCounts,
     int ind = threadIdx.x;
     int idx = ind + blockIdx.x * blockDim.x;
 
-    unsigned int thisVecCount, thisFirstVecIndex, angle_idx, model_point_idx, scene_point_idx;
+    unsigned int thisVoteCount, thisFirstVoteIndex, angle_idx, model_point_idx, scene_point_idx;
     unsigned long vote;
 
     unsigned long low6 = ((unsigned long) -1) >> 58;
@@ -611,12 +600,12 @@ __global__ void trans_calc_kernel(float3 *vecs, unsigned int *vecCounts,
     int c;
 
     while(idx < count){
-        thisVecCount = vecCounts[idx];
-        thisFirstVecIndex = firstVecIndex[idx];
+        thisVoteCount = voteCounts[idx];
+        thisFirstVoteIndex = firstVoteIndex[idx];
         c = 0;
 
-        for(int i = 0; i < thisVecCount; i++){
-            vote = votes[thisFirstVecIndex+i];
+        for(int i = 0; i < thisVoteCount; i++){
+            vote = votes[thisFirstVoteIndex+i];
             angle_idx = (unsigned int) (vote & low6);
             if(((int) fabsf(angle_idx - maxidx[idx])) > 1) continue;
 
@@ -634,9 +623,9 @@ __global__ void trans_calc_kernel(float3 *vecs, unsigned int *vecCounts,
             c++;
         }
 
-        angle_idx = (unsigned int) (votes[thisFirstVecIndex] & low6);
-        scene_point_idx = (unsigned int) ((votes[thisFirstVecIndex] & hi32) >> 32);
-        model_point_idx = (unsigned int) ((votes[thisFirstVecIndex] & model_point_mask) >> 6);
+        angle_idx = (unsigned int) (votes[thisFirstVoteIndex] & low6);
+        scene_point_idx = (unsigned int) ((votes[thisFirstVoteIndex] & hi32) >> 32);
+        model_point_idx = (unsigned int) ((votes[thisFirstVoteIndex] & model_point_mask) >> 6);
 
         compute_transforms(angle_idx, model_points[model_point_idx],
                            m_roty, m_rotz,

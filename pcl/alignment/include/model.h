@@ -52,6 +52,11 @@ public:
         // the vote code stored in voteCodes[i].
         thrust::device_vector<unsigned int> *voteCounts;
 
+        // firstVoteIndex[i] is the index of the first entry in voteCodes
+        // corresponding to votes[i]. The following voteCounts[i]-1
+        // entries also correspond to voteCodes[i].
+        thrust::device_vector<unsigned int> *firstVoteIndex;
+
         // Vector of unique vecs
         thrust::device_vector<float3> *vecs;
 
