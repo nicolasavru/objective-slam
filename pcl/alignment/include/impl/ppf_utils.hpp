@@ -132,7 +132,7 @@ void rowwise_max(Vector1& input, int rows, int cols,
     // allows us to use "_1" instead of "thrust::placeholders::_1"
     using namespace thrust::placeholders;
 
-    thrust::device_vector<float> minval(rows);
+    thrust::device_vector<float> maxval(rows);
 
     // OH GOD HOW DO YOU FORMAT THIS?!?
     thrust::reduce_by_key
@@ -146,7 +146,7 @@ void rowwise_max(Vector1& input, int rows, int cols,
                                                              _1 % cols))),
          // discard key output
          thrust::make_discard_iterator(),
-         thrust::make_zip_iterator(thrust::make_tuple(minval.begin(),
+         thrust::make_zip_iterator(thrust::make_tuple(maxval.begin(),
                                                       maxidx.begin())),
          thrust::equal_to<int>(),
          // compare by first element of tuple

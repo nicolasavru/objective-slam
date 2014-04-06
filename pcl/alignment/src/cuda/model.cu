@@ -108,8 +108,6 @@ void Model::ppf_lookup(Scene *scene){
     unsigned int lastIndex, lastCount;
     thrust::device_vector<unsigned long> *votes_old = new thrust::device_vector<unsigned long>(scene->getModelPPFs()->size(),0);
 
-    // truncVotes is an array that will hold scene reference point and model point match info
-    thrust::device_vector<unsigned long> *truncVotes = new thrust::device_vector<unsigned long>(scene->getModelPPFs()->size(), 0);
     // populates parallel arrays votes and vecs_old
     int blocks = std::min(((int)(scene->getHashKeys()->size()) + BLOCK_SIZE - 1) / BLOCK_SIZE, MAX_NBLOCKS);
     std::cout << "blocks: " << blocks << std::endl;
@@ -120,7 +118,7 @@ void Model::ppf_lookup(Scene *scene){
          RAW_PTR(this->modelPoints), RAW_PTR(this->modelNormals),
          this->n, RAW_PTR(scene->getModelPoints()),
          RAW_PTR(scene->getModelNormals()), scene->numPoints(),
-         RAW_PTR(votes_old), RAW_PTR(truncVotes),
+         RAW_PTR(votes_old),
          scene->getHashKeys()->size());
 
 #ifdef DEBUG
@@ -137,15 +135,38 @@ void Model::ppf_lookup(Scene *scene){
     }
 #endif
 
-    thrust::sort_by_key(truncVotes->begin(), truncVotes->end(), votes_old->begin());
+    thrust::sort(votes_old->begin(), votes_old->end());
     this->votes = new thrust::device_vector<unsigned long>();
     this->voteCounts = new thrust::device_vector<unsigned int>();
-    std::cerr << "vote_bins:" << std::endl;
     histogram_destructive(*votes_old, *(this->votes), *(this->voteCounts));
-    this->firstVoteIndex = new thrust::device_vector<unsigned int>(this->votes->size());
-    thrust::exclusive_scan(this->voteCounts->begin(),
-                           this->voteCounts->end(),
-                           this->firstVoteIndex->begin());
+
+    thrust::device_vector<unsigned int> *uniqueSceneRefPts =
+        new thrust::device_vector<unsigned int>(this->votes->size());
+    this->maxval = new thrust::device_vector<int>(this->votes->size());
+    thrust::device_vector<unsigned int> *maxModelAngleCode =
+        new thrust::device_vector<unsigned int>(this->votes->size());
+    {
+        // allows us to use "_1" instead of "thrust::placeholders::_1"
+        using namespace thrust::placeholders;
+
+        // OH GOD HOW DO YOU FORMAT THIS?!?
+        thrust::reduce_by_key
+            (// key input: step function that increments for every row
+             thrust::make_transform_iterator(votes->begin(), (_1 >> 32)),
+             thrust::make_transform_iterator(votes->end(), (_1 >> 32)),
+             // value input: (value, index) tuple
+             thrust::make_zip_iterator(thrust::make_tuple(voteCounts->begin(),
+                                                          thrust::make_transform_iterator(votes->begin(),
+                                                                                          (_1 & (-1ul >> 32))))),
+             // discard key output
+             uniqueSceneRefPts->begin(),
+             thrust::make_zip_iterator(thrust::make_tuple(this->maxval->begin(),
+                                                          maxModelAngleCode->begin())),
+             thrust::equal_to<unsigned int>(),
+             // compare by first element of tuple
+             thrust::maximum<thrust::tuple<int, unsigned int> >()
+             );
+    }
 
     // // populates voteCodes and voteCounts, sorts votes
     // this->accumulateVotes();
@@ -192,30 +213,30 @@ void Model::ppf_lookup(Scene *scene){
 
     // Step 5
     // Can almost represent this (and Step 4) as a reduction or transformation, but not quite.
-    this->accumulator = new thrust::device_vector<unsigned int>(this->votes->size()*N_ANGLE, 0);
-    std::cout << "votes_size:" << this->votes->size() << std::endl;
+    // this->accumulator = new thrust::device_vector<unsigned int>(truncVotes->size()*N_ANGLE, 0);
+    // std::cout << "votes_size:" << this->votes->size() << std::endl;
 
-    blocks = std::min(((int)(this->votes->size()) + BLOCK_SIZE - 1) / BLOCK_SIZE, MAX_NBLOCKS);
-    ppf_reduce_rows_kernel<<<blocks,BLOCK_SIZE>>>(RAW_PTR(this->votes),
-                                                  RAW_PTR(this->voteCounts),
-                                                  RAW_PTR(this->firstVoteIndex),
-                                                  N_ANGLE,
-                                                  RAW_PTR(accumulator),
-                                                  this->votes->size());
+    // blocks = std::min(((int)(this->votes->size()) + BLOCK_SIZE - 1) / BLOCK_SIZE, MAX_NBLOCKS);
+    // ppf_reduce_rows_kernel<<<blocks,BLOCK_SIZE>>>(RAW_PTR(this->votes),
+    //                                               RAW_PTR(this->voteCounts),
+    //                                               RAW_PTR(this->firstVoteIndex),
+    //                                               N_ANGLE,
+    //                                               RAW_PTR(accumulator),
+    //                                               this->votes->size());
 
-    // Steps 6, 7
-    this->maxidx = new thrust::device_vector<unsigned int>(this->votes->size());
-    rowwise_max(*accumulator, this->votes->size(), N_ANGLE, *maxidx);
+    // // Steps 6, 7
+    // this->maxidx = new thrust::device_vector<unsigned int>(this->votes->size());
+    // rowwise_max(*accumulator, this->votes->size(), N_ANGLE, *maxidx);
 
-    thrust::device_vector<unsigned int> *scores =
-        new thrust::device_vector<unsigned int>(this->votes->size());
+    // thrust::device_vector<unsigned int> *scores =
+    //     new thrust::device_vector<unsigned int>(this->votes->size());
 
-    blocks = std::min(((int)(this->votes->size()) + BLOCK_SIZE - 1) / BLOCK_SIZE, MAX_NBLOCKS);
-    ppf_score_kernel<<<blocks,BLOCK_SIZE>>>(RAW_PTR(accumulator),
-                                            RAW_PTR(maxidx),
-                                            N_ANGLE, SCORE_THRESHOLD,
-                                            RAW_PTR(scores),
-                                            this->votes->size());
+    // blocks = std::min(((int)(this->votes->size()) + BLOCK_SIZE - 1) / BLOCK_SIZE, MAX_NBLOCKS);
+    // ppf_score_kernel<<<blocks,BLOCK_SIZE>>>(RAW_PTR(accumulator),
+    //                                         RAW_PTR(maxidx),
+    //                                         N_ANGLE, SCORE_THRESHOLD,
+    //                                         RAW_PTR(scores),
+    //                                         this->votes->size());
 
     // Step 8, 9
     // call trans_calc_kernel
@@ -223,16 +244,11 @@ void Model::ppf_lookup(Scene *scene){
 
     blocks = std::min(((int)(this->votes->size()) + BLOCK_SIZE - 1) / BLOCK_SIZE, MAX_NBLOCKS);
     trans_calc_kernel<<<blocks,BLOCK_SIZE>>>
-             (RAW_PTR(this->votes), RAW_PTR(this->voteCounts),
-              RAW_PTR(this->firstVoteIndex),
-              RAW_PTR(maxidx), RAW_PTR(scores),
-              N_ANGLE,
-              RAW_PTR(this->modelPoints), RAW_PTR(this->modelNormals),
-              this->modelPoints->size(),
-              RAW_PTR(scene->getModelPoints()), RAW_PTR(scene->getModelNormals()),
-              scene->getModelPoints()->size(),
-              RAW_PTR(this->transformations),
-              this->votes->size());
+        (RAW_PTR(uniqueSceneRefPts), RAW_PTR(maxModelAngleCode),
+         RAW_PTR(this->modelPoints), RAW_PTR(this->modelNormals),
+         RAW_PTR(scene->getModelPoints()), RAW_PTR(scene->getModelNormals()),
+         RAW_PTR(this->transformations),
+         this->votes->size());
 
     #ifdef DEBUG
         {

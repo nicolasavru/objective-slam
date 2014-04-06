@@ -75,6 +75,7 @@ public:
 
         thrust::device_vector<unsigned int> *accumulator;
         thrust::device_vector<unsigned int> *maxidx;
+        thrust::device_vector<int> *maxval;
 
         void accumulateVotes();
 };

@@ -446,7 +446,7 @@ __global__ void ppf_vote_kernel(unsigned int *sceneKeys, unsigned int *sceneIndi
                                 unsigned int *firstPPFIndex, unsigned int *key2ppfMap,
                                 float3 *modelPoints, float3 *modelNormals, int modelSize,
                                 float3 *scenePoints, float3 *sceneNormals, int sceneSize,
-                                unsigned long *votes_old, unsigned long *truncVotes, int count){
+                                unsigned long *votes_old, int count){
     if(count <= 1) return;
 
     int ind = threadIdx.x;
@@ -458,7 +458,8 @@ __global__ void ppf_vote_kernel(unsigned int *sceneKeys, unsigned int *sceneIndi
         unsigned int thisSceneIndex = sceneIndices[idx];
         if (thisSceneKey == 0 ||
             thisSceneKey != hashKeys[thisSceneIndex]){
-            return;
+            idx += blockDim.x * gridDim.x;
+            continue;
         }
         unsigned int thisPPFCount = ppfCount[thisSceneIndex];
         unsigned int thisFirstPPFIndex = firstPPFIndex[thisSceneIndex];
@@ -485,8 +486,6 @@ __global__ void ppf_vote_kernel(unsigned int *sceneKeys, unsigned int *sceneIndi
                               D_DIST, alpha_idx);
             votes_old[thisFirstPPFIndex + i] =
                 (((unsigned long) scene_r_index) << 32) | (model_r_index << 6) | (alpha_idx);
-            truncVotes[thisFirstPPFIndex + i] = 
-            (((unsigned long) scene_r_index) << 26) | model_r_index;
         }
 
         idx += blockDim.x * gridDim.x;
@@ -571,60 +570,32 @@ __global__ void ppf_score_kernel(unsigned int *accumulator,
 //   find possible starting indices of blocks matching Model hashKeys
 
 // TODO: increase thread work
-__global__ void trans_calc_kernel(unsigned long *votes, unsigned int *voteCounts,
-                                  unsigned int *firstVoteIndex,
-                                  unsigned int *maxidx, unsigned int *scores, int n_angle,
-                                  float3 *model_points, float3 *model_normals, int model_size,
-                                  float3 *scene_points, float3 *scene_normals, int scene_size,
+__global__ void trans_calc_kernel(unsigned int *uniqueSceneRefPts,
+                                  unsigned int *maxModelAngleCodes,
+                                  float3 *model_points, float3 *model_normals,
+                                  float3 *scene_points, float3 *scene_normals,
                                   float *transforms, int count){
     if(count <= 1) return;
 
     int ind = threadIdx.x;
     int idx = ind + blockIdx.x * blockDim.x;
 
-    unsigned int thisVoteCount, thisFirstVoteIndex, angle_idx, model_point_idx, scene_point_idx;
+    unsigned int angle_idx, model_point_idx, scene_point_idx;
     unsigned long vote;
 
-    unsigned long low6 = ((unsigned long) -1) >> 58;
-    unsigned long hi32 = ((unsigned long) -1) << 32;
-    unsigned long model_point_mask = ((unsigned long) -1) ^ hi32 ^ low6;
-    float m_roty_t, m_rotz_t, s_roty_t, s_rotz_t;
-
-    // angle average accumulators
-    float m_roty = 0;
-    float m_rotz = 0;
-    float s_roty = 0;
-    float s_rotz = 0;
-
-    int c;
+    unsigned int low6 = ((unsigned long) -1) >> 26;
+    // unsigned long hi32 = ((unsigned long) -1) << 32;
+    // unsigned long model_point_mask = ((unsigned long) -1) ^ hi32 ^ low6;
+    float m_roty, m_rotz, s_roty, s_rotz;
 
     while(idx < count){
-        thisVoteCount = voteCounts[idx];
-        thisFirstVoteIndex = firstVoteIndex[idx];
-        c = 0;
+        scene_point_idx = uniqueSceneRefPts[idx];
+        model_point_idx = (maxModelAngleCodes[idx] >> 6);
+        angle_idx = maxModelAngleCodes[idx] & low6;
 
-        for(int i = 0; i < thisVoteCount; i++){
-            vote = votes[thisFirstVoteIndex+i];
-            angle_idx = (unsigned int) (vote & low6);
-            if(((int) fabsf(angle_idx - maxidx[idx])) > 1) continue;
-
-            scene_point_idx = (unsigned int) ((vote & hi32) >> 32);
-            model_point_idx = (unsigned int) ((vote & model_point_mask) >> 6);
-            compute_rot_angles(model_normals[model_point_idx],
-                               scene_normals[scene_point_idx],
-                               &m_roty_t, &m_rotz_t, &s_roty_t, &s_rotz_t);
-
-            // running average
-            m_roty = (m_roty_t + c*m_roty)/(c+1);
-            m_rotz = (m_rotz_t + c*m_rotz)/(c+1);
-            s_roty = (s_roty_t + c*s_roty)/(c+1);
-            s_rotz = (s_rotz_t + c*s_rotz)/(c+1);
-            c++;
-        }
-
-        angle_idx = (unsigned int) (votes[thisFirstVoteIndex] & low6);
-        scene_point_idx = (unsigned int) ((votes[thisFirstVoteIndex] & hi32) >> 32);
-        model_point_idx = (unsigned int) ((votes[thisFirstVoteIndex] & model_point_mask) >> 6);
+        compute_rot_angles(model_normals[model_point_idx],
+                           scene_normals[scene_point_idx],
+                           &m_roty, &m_rotz, &s_roty, &s_rotz);
 
         compute_transforms(angle_idx, model_points[model_point_idx],
                            m_roty, m_rotz,
