@@ -152,13 +152,12 @@ void Model::ppf_lookup(Scene *scene){
         // OH GOD HOW DO YOU FORMAT THIS?!?
         thrust::reduce_by_key
             (// key input: step function that increments for every row
-             thrust::make_transform_iterator(votes->begin(), (_1 >> 32)),
+             thrust::make_transform_iterator(votes->begin()+1, (_1 >> 32)),
              thrust::make_transform_iterator(votes->end(), (_1 >> 32)),
              // value input: (value, index) tuple
-             thrust::make_zip_iterator(thrust::make_tuple(voteCounts->begin(),
-                                                          thrust::make_transform_iterator(votes->begin(),
+             thrust::make_zip_iterator(thrust::make_tuple(voteCounts->begin()+1,
+                                                          thrust::make_transform_iterator(votes->begin()+1,
                                                                                           (_1 & (-1ul >> 32))))),
-             // discard key output
              uniqueSceneRefPts->begin(),
              thrust::make_zip_iterator(thrust::make_tuple(this->maxval->begin(),
                                                           maxModelAngleCode->begin())),

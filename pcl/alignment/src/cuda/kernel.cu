@@ -592,6 +592,10 @@ __global__ void trans_calc_kernel(unsigned int *uniqueSceneRefPts,
         scene_point_idx = uniqueSceneRefPts[idx];
         model_point_idx = (maxModelAngleCodes[idx] >> 6);
         angle_idx = maxModelAngleCodes[idx] & low6;
+        if(scene_point_idx == 0 && model_point_idx == 0 && angle_idx == 0){
+            idx += blockDim.x * gridDim.x;
+            continue;
+        }
 
         compute_rot_angles(model_normals[model_point_idx],
                            scene_normals[scene_point_idx],
