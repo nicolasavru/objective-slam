@@ -10,6 +10,7 @@
 #include "scene.h"
 #include "kernel.h"
 #include "book.h"
+#include "impl/util.hpp"
 
 Scene::Scene(){}
 
@@ -57,21 +58,7 @@ void Scene::initPPFs(thrust::host_vector<float3> *points, thrust::host_vector<fl
                                       n);
 
     /* DEBUG */
-    // COMPARE modelPPFs to MATLAB F_disc (model_description.m and voting_scheme.m)
-    float *h_modelPPFs = new float[4*n*n];
-
-    cudaMemcpy(h_modelPPFs, RAW_PTR(this->modelPPFs), sizeof(float)*(4*n*n), cudaMemcpyDeviceToHost);
-    //Write out binary file of result
-    FILE *fidOut;
-    size_t result;
-
-    fidOut = fopen("TestModelPPFs.bin","wb");
-    if(fidOut == NULL){fputs("File Open error: fidOut: TestModelPPFs.bin",stderr); exit (1);}
-    result = fwrite(h_modelPPFs, sizeof(float), 4*n*n, fidOut);
-    if (result != (4*n*n)){fputs("File Write error: fidOut: h_modelPPFs",stderr); exit (2);}
-    result = fclose(fidOut);
-    if (result != 0){fputs("File Close error: fidOut: TestModelPPFs",stderr); exit (3);}
-    delete [] h_modelPPFs;
+    write_device_vector("TestModelPPFs.bin", this->modelPPFs);
     /* DEBUG */
 
     #ifdef DEBUG
