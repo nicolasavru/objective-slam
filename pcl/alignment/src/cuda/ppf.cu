@@ -68,6 +68,7 @@ void test_histogram(char *point_path, int N){
     }
 }
 
+// old code, not currently used
 int ply_load_main(char *point_path, char *norm_path, int N, int devUse){
     // test_histogram("/tmp/hist_test.bin", 10000);
     // return 0;
@@ -149,6 +150,7 @@ int ply_load_main(char *point_path, char *norm_path, int N, int devUse){
     return 0;
 }
 
+
 Eigen::Matrix4f ply_load_main(float3 *scenePoints, float3 *sceneNormals, int sceneN,
                               float3 *objectPoints, float3 *objectNormals, int objectN,
                               int devUse){
@@ -166,6 +168,7 @@ Eigen::Matrix4f ply_load_main(float3 *scenePoints, float3 *sceneNormals, int sce
     HANDLE_ERROR(cudaGetDeviceProperties(&prop, devNum));
     fprintf(stderr, "Using device %d, %s: \n", devNum, prop.name);
 
+    // convert float3 * to thrust::host_vector<float3>
     thrust::host_vector<float3> *scenePointsVec =
             new thrust::host_vector<float3>(scenePoints, scenePoints+sceneN);
     thrust::host_vector<float3> *sceneNormsVec =
@@ -183,7 +186,7 @@ Eigen::Matrix4f ply_load_main(float3 *scenePoints, float3 *sceneNormals, int sce
     // cuda setup
     int blocks = prop.multiProcessorCount;
     /* DEBUG */
-    fprintf(stderr, "blocks: %d\n", blocks);
+    fprintf(stderr, "blocks_multiproccount: %d\n", blocks);
     /* DEBUG */
 
     // build model description
@@ -199,7 +202,6 @@ Eigen::Matrix4f ply_load_main(float3 *scenePoints, float3 *sceneNormals, int sce
     //     cout << "votes[" << i << "] = " << ((*votes)[i] & low6) << endl;
     // }
 
-
     // copy ppfs back to host
     thrust::host_vector<float> *transformations = new thrust::host_vector<float>(*model->getTransformations());
     thrust::host_vector<unsigned int> *maxval = new thrust::host_vector<unsigned int>(*model->maxval);
@@ -208,20 +210,20 @@ Eigen::Matrix4f ply_load_main(float3 *scenePoints, float3 *sceneNormals, int sce
     int m = 0;
     int m_idx = 0;
     for (int i=0; i<maxval->size(); i++){
-        cout << "num_votes: " << (*maxval)[i] << endl;
-        if((*maxval)[i] > m){
-            m_idx = i;
-            m = (*maxval)[i];
-        }
-        cout << "transforms(:,:," << i+1 << ") = [";
-        for (int j=0; j<4; j++){
-            for (int k=0; k<4; k++){
-                cout << (*transformations)[i*16+j*4+k] << " ";
-            }
-            cout << ";" << endl;
-        }
-        cout << "];" << endl;
-        cout << endl << endl;
+//        cout << "num_votes: " << (*maxval)[i] << endl;
+//        if((*maxval)[i] > m){
+//            m_idx = i;
+//            m = (*maxval)[i];
+//        }
+//        cout << "transforms(:,:," << i+1 << ") = [";
+//        for (int j=0; j<4; j++){
+//            for (int k=0; k<4; k++){
+//                cout << (*transformations)[i*16+j*4+k] << " ";
+//            }
+//            cout << ";" << endl;
+//        }
+//        cout << "];" << endl;
+//        cout << endl << endl;
     }
 
     Eigen::Matrix4f T;

@@ -6,7 +6,7 @@ min_coords = min(model_points);
 max_coords = max(model_points);
 center = mean([min_coords; max_coords]);
 
-dists = sqrt(sum(model_points-repmat(center, size(model_points,1), 1).^2, 2));
+dists = sqrt(sum((model_points-repmat(center, size(model_points,1), 1)).^2, 2));
 max_dist = max(dists);
 
 d_dist = 0.1 * max_dist;
@@ -21,6 +21,11 @@ mapObj = containers.Map('KeyType', 'double', 'ValueType', 'any');
 Opt.Format = 'hex';
 Opt.Method = 'SHA-1';
 
+size(index_pairs,1)
+
+F_disc_mat = zeros(4,size(index_pairs,1));
+
+
 for ii = 1:size(index_pairs,1)
   
   if mod(ii, 1000) == 0
@@ -29,16 +34,21 @@ for ii = 1:size(index_pairs,1)
   
   % Handle case of identical point in pair
   if index_pairs(ii,1) == index_pairs(ii,2)
+     ii;
+     F_disc = [nan; 0; 0; 0];
     continue
   end
   
+  % handle floating point error in imaginary part
   F = real(point_pair_feature(model_points(index_pairs(ii,1),:), ...
-                         model_normals(index_pairs(ii,1),:), ...
-                         model_points(index_pairs(ii,2),:), ...
-                         model_normals(index_pairs(ii,2),:)));
-                       
-%   F_disc = [F(1)-mod(F(1),d_dist); F(2:4)-mod(F(2:4),d_angle)];
-  F_disc = [quant(F(1),d_dist); quant(F(2:4),d_angle)];
+                              model_normals(index_pairs(ii,1),:), ...
+                              model_points(index_pairs(ii,2),:), ...
+                              model_normals(index_pairs(ii,2),:)));
+  ii-1;
+  F_disc = my_discretize(F, d_dist, d_angle);
+  F_disc_mat(:,ii) = F_disc';
+%   ii
+%   F_disc
   
   hash = DataHash(F_disc, Opt);
   key = hex2num(hash(1:16));
@@ -55,5 +65,5 @@ for ii = 1:size(index_pairs,1)
   end
   
 end
-
+%keyboard
 end

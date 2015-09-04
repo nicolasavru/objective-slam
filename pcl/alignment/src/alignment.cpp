@@ -17,6 +17,10 @@
 #include <pcl/registration/sample_consensus_prerejective.h>
 #include <pcl/segmentation/sac_segmentation.h>
 #include <pcl/visualization/pcl_visualizer.h>
+#include <pcl/keypoints/uniform_sampling.h>
+#include <pcl/kdtree/kdtree_flann.h>
+#include <pcl/features/normal_3d.h>
+#include <pcl/filters/random_sample.h>
 
 #include "ppf.h"
 //#include "my_ppf_registration.h"
@@ -31,6 +35,29 @@ typedef pcl::PPFEstimation<PointNT, PointNT, FeatureT> FeatureEstimationT;
 typedef pcl::PointCloud<FeatureT> FeatureCloudT;
 typedef pcl::visualization::PointCloudColorHandlerCustom<PointNT> ColorHandlerT;
 
+template <typename Point>
+typename pcl::PointCloud<Point>::Ptr randomDownsample(typename pcl::PointCloud<Point>::Ptr cloud, int n){
+    pcl::RandomSample<Point> rs;
+    typename pcl::PointCloud<Point>::Ptr filtered_cloud(new pcl::PointCloud<Point>);
+    rs.setSample(1.0/n * cloud->size());
+    rs.setInputCloud(cloud);
+    rs.filter(*filtered_cloud);
+    return filtered_cloud;
+}
+
+template <typename Point>
+typename pcl::PointCloud<Point>::Ptr sequentialDownsample(typename pcl::PointCloud<Point>::Ptr cloud, int n){
+    typename pcl::PointCloud<Point>::Ptr filtered_cloud(new pcl::PointCloud<Point>);
+    int i = 0;
+    for (typename pcl::PointCloud<Point>::iterator it = cloud->begin(); it != cloud->end(); ++it, ++i){
+        if(i % n == 0){
+            filtered_cloud->push_back(*it);
+        }
+    }
+    return filtered_cloud;
+}
+
+
 // Align a rigid object to a scene with clutter and occlusions
 int main(int argc, char **argv){
     // Point clouds
@@ -43,7 +70,7 @@ int main(int argc, char **argv){
     // cuda compilation experimentation
     if (argc == 2){
         int N = atoi(argv[1]);
-        ply_load_main("/tmp/points.txt", "/tmp/norms.txt", N, 0);
+        ply_load_main("/tmp/points.txt", "/tmp/norms.txt", N, 1);
         return 2;
     } else if (argc == 3){
 //        int N = atoi(argv[1]);
@@ -60,57 +87,66 @@ int main(int argc, char **argv){
     }
 
     // Load object and scene
-    pcl::console::print_highlight("Loading point clouds...\n");
-    if (pcl::io::loadPLYFile<PointNT>(argv[1], *object) < 0
-            || pcl::io::loadPLYFile<PointNT>(argv[2], *scene) < 0) {
-        pcl::console::print_error("Error loading object/scene file!\n");
+    // MATLAB drost.m:5-39
+    pcl::console::print_highlight("Loading object point cloud...\n");
+    if (pcl::io::loadPLYFile<PointNT>(argv[1], *object) < 0) {
+        pcl::console::print_error("Error loading object file!\n");
+        return (1);
+    }
+    pcl::console::print_highlight("Loading scene point cloud...\n");
+    if (pcl::io::loadPLYFile<PointNT>(argv[2], *scene) < 0) {
+        pcl::console::print_error("Error loading scene file!\n");
         return (1);
     }
 
-    // Downsample
-    // pcl::console::print_highlight("Downsampling...\n");
-    // pcl::VoxelGrid<PointNT> grid;
-    // float leaf = 0.03f;
-    // grid.setLeafSize(leaf, leaf, leaf);
-    // std::cerr << "object before filtering: " << object->width * object->height
-    //         << " data points (" << pcl::getFieldsList(*object) << ")."
-    //         << std::endl;
-    // grid.setInputCloud(object);
-    // grid.filter(*object);
-    // std::cerr << "object after filtering: " << object->width * object->height
-    //         << " data points (" << pcl::getFieldsList(*object) << ")."
-    //         << std::endl;
-    // leaf = 0.05f;
-    // grid.setLeafSize(leaf, leaf, leaf);
-    // std::cerr << "scene before filtering: " << scene->width * scene->height
-    //         << " data points (" << pcl::getFieldsList(*scene) << ")."
-    //         << std::endl;
-    // grid.setInputCloud(scene);
-    // grid.filter(*scene);
-    // std::cerr << "scene after filtering: " << scene->width * scene->height
-    //         << " data points (" << pcl::getFieldsList(*scene) << ")."
-    //         << std::endl;
 
     // // Estimate normals for object
     // pcl::console::print_highlight("Estimating object normals...\n");
-    // pcl::NormalEstimationOMP<PointNT, PointNT> nest_obj;
-    // nest_obj.setRadiusSearch(0.2);
+    // // pcl::NormalEstimationOMP<PointNT, PointNT> nest_obj;
+    // pcl::NormalEstimation<PointNT, PointNT> nest_obj;
+    // nest_obj.setRadiusSearch(0.01);
+    // // pcl::search::KdTree<PointNT>::Ptr tree (new pcl::search::KdTree<PointNT>);
+    // // nest_obj.setSearchMethod (tree);
+    // // nest_obj.setKSearch(15);
     // nest_obj.setInputCloud(object);
     // nest_obj.compute(*object);
 
     // // Estimate normals for scene
     // pcl::console::print_highlight("Estimating scene normals...\n");
-    // pcl::NormalEstimationOMP<PointNT, PointNT> nest_scene;
-    // nest_scene.setRadiusSearch(0.2);
+    // // pcl::NormalEstimationOMP<PointNT, PointNT> nest_scene;
+    // pcl::NormalEstimation<PointNT, PointNT> nest_scene;
+    // nest_scene.setRadiusSearch(0.01);
+    // // pcl::search::KdTree<PointNT>::Ptr tree_scene (new pcl::search::KdTree<PointNT>);
+    // // nest_obj.setSearchMethod (tree_scene);
+    // // nest_scene.setKSearch(15);
     // nest_scene.setInputCloud(scene);
     // nest_scene.compute(*scene);
 
+
+    // Downsample
+    pcl::console::print_info("Downsampling...\n");
+    int object_n = 2500;
+    int scene_n = 1000;
+    pcl::console::print_info("Object size before filtering: %u (%u x %u)\n",
+                             object->size(), object-> width, object->height);
+    object = sequentialDownsample<PointNT>(object, object_n);
+    pcl::console::print_info("Object size after filtering: %u (%u x %u)\n",
+                             object->size(), object-> width, object->height);
+
+    pcl::console::print_info("Scene size before filtering: %u (%u x %u)\n",
+                             scene->size(), scene-> width, scene->height);
+    scene = sequentialDownsample<PointNT>(scene, scene_n);
+    pcl::console::print_info("Scene size after filtering: %u (%u x %u)\n",
+                             scene->size(), scene-> width, scene->height);
+
+
+    // Convert point clouds to arrays of float3.
     // TODO: Check for malloc errors
-    float3 *scene_points = (float3 *) malloc(scene->points.size()*sizeof(float3));
-    float3 *scene_normals = (float3 *) malloc(scene->points.size()*sizeof(float3));
-    float3 *object_points = (float3 *) malloc(object->points.size()*sizeof(float3));
-    float3 *object_normals = (float3 *) malloc(object->points.size()*sizeof(float3));
-    for (int i=0; i<scene->points.size(); i++){
+    float3 *scene_points = (float3 *) malloc(scene->size()*sizeof(float3));
+    float3 *scene_normals = (float3 *) malloc(scene->size()*sizeof(float3));
+    float3 *object_points = (float3 *) malloc(object->size()*sizeof(float3));
+    float3 *object_normals = (float3 *) malloc(object->size()*sizeof(float3));
+    for (int i=0; i<scene->size(); i++){
         (scene_points+i)->x = scene->points[i].x;
         (scene_points+i)->y = scene->points[i].y;
         (scene_points+i)->z = scene->points[i].z;
@@ -119,7 +155,7 @@ int main(int argc, char **argv){
         (scene_normals+i)->z = scene->points[i].normal_z;
     }
 
-    for (int i=0; i<object->points.size(); i++){
+    for (int i=0; i<object->size(); i++){
         (object_points+i)->x = object->points[i].x;
         (object_points+i)->y = object->points[i].y;
         (object_points+i)->z = object->points[i].z;
@@ -127,22 +163,29 @@ int main(int argc, char **argv){
         (object_normals+i)->y = object->points[i].normal_y;
         (object_normals+i)->z = object->points[i].normal_z;
     }
-    Eigen::Matrix4f T = ply_load_main(scene_points, scene_normals, scene->points.size(), object_points,
-                                      object_normals, object->points.size(), 0);
+    // MATLAB drost.m 59-63 model_description() and voting_scheme()
+    // pass in object and scene, get back transformation matching object to scene
+    Eigen::Matrix4f T = ply_load_main(scene_points, scene_normals, scene->size(), object_points,
+                                      object_normals, object->size(), 1);
 
+    // MATLAB drost.m:80-108
     cout << T << endl;
     pcl::transformPointCloudWithNormals(*object, *object_aligned, T);
     boost::shared_ptr<pcl::visualization::PCLVisualizer> viewer (new pcl::visualization::PCLVisualizer ("3D Viewer"));
     viewer->setBackgroundColor (0, 0, 0);
 
     viewer->addPointCloud<PointNT> (scene, "scene");
+    viewer->addPointCloudNormals<PointNT, PointNT> (scene, scene, 5, 0.05, "scene_normals");
 
     ColorHandlerT red_color(object, 255, 0, 0);
     viewer->addPointCloud<PointNT> (object, red_color, "object");
+    viewer->addPointCloudNormals<PointNT, PointNT> (object, object, 5, 0.05, "object_normals");
     viewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "object");
 
     ColorHandlerT green_color(object_aligned, 0, 255, 0);
     viewer->addPointCloud<PointNT> (object_aligned, green_color, "object_aligned");
+    viewer->addPointCloudNormals<PointNT, PointNT> (object_aligned, object_aligned,
+                                                    5, 0.05, "object_aligned_normals");
     viewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "object_aligned");
 
     viewer->addCoordinateSystem (1.0, "foo", 0);
@@ -153,7 +196,7 @@ int main(int argc, char **argv){
         boost::this_thread::sleep (boost::posix_time::microseconds (100000));
     }
 
-    //    // // Estimate features
+//    // // Estimate features
 //    // pcl::console::print_highlight ("Estimating features...\n");
 //    // FeatureEstimationT fest;
 //    // fest.setRadiusSearch (0.025);

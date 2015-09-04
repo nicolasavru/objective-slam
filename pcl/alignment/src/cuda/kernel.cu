@@ -375,11 +375,15 @@ __global__ void ppf_kernel(float3 *points, float3 *norms, float4 *out, int count
             __syncthreads();
 
             for(int j = 0; j < bound; j++) {
+                // MATLAB model_description.m:31
+                // handle case of identical points in pair
                 if((j + i - idx) == 0){
                     out[idx*count + j + i].x = CUDART_NAN_F;
                     continue;
                 };
+                // MATLAB model_description.m:37
                 out[idx*count + j + i] = compute_ppf(thisPoint, thisNorm, Spoints[j], Snorms[j]);
+                // MATLAB model_description.m:42
                 out[idx*count + j + i] = disc_feature(out[idx*count + j + i], D_DIST, D_ANGLE0);
             }
         }

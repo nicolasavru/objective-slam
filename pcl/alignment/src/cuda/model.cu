@@ -14,6 +14,22 @@
 #include "kernel.h"
 #include "book.h"
 
+struct high_32_bits : public thrust::unary_function<unsigned long,unsigned int>{
+    __host__ __device__
+    unsigned int operator()(unsigned long i) const {
+        return (unsigned int) (i >> 32);
+    }
+};
+
+
+struct low_32_bits : public thrust::unary_function<unsigned long,unsigned int>{
+    __host__ __device__
+    unsigned int operator()(unsigned long i) const {
+        return (unsigned int) (i & (-1ul >> 32));
+    }
+};
+
+
 Model::Model(thrust::host_vector<float3> *points, thrust::host_vector<float3> *normals, int n){
     this->initPPFs(points, normals, n);
 
@@ -28,8 +44,8 @@ Model::Model(thrust::host_vector<float3> *points, thrust::host_vector<float3> *n
     // for each ppf, compute a 32-bit hash
     int blocks = std::min(((int)(this->modelPPFs->size()) + BLOCK_SIZE - 1) / BLOCK_SIZE, MAX_NBLOCKS);
     ppf_hash_kernel<<<blocks,BLOCK_SIZE>>>(RAW_PTR(this->modelPPFs),
-                                                     RAW_PTR(hashKeys_old),
-                                                     this->modelPPFs->size());
+                                           RAW_PTR(hashKeys_old),
+                                           this->modelPPFs->size());
 // #ifdef DEBUG
 //     {
 //         using namespace std;
@@ -111,6 +127,7 @@ void Model::ppf_lookup(Scene *scene){
     // populates parallel arrays votes and vecs_old
     int blocks = std::min(((int)(scene->getHashKeys()->size()) + BLOCK_SIZE - 1) / BLOCK_SIZE, MAX_NBLOCKS);
     std::cout << "blocks: " << blocks << std::endl;
+    std::cout << scene->getHashKeys()->size() << ", " << blocks << ", " << BLOCK_SIZE << ", " << MAX_NBLOCKS << std::endl;
     ppf_vote_kernel<<<blocks,BLOCK_SIZE>>>
         (RAW_PTR(scene->getHashKeys()), RAW_PTR(sceneIndices),
          RAW_PTR(this->hashKeys), RAW_PTR(this->ppfCount),
@@ -142,30 +159,24 @@ void Model::ppf_lookup(Scene *scene){
 
     thrust::device_vector<unsigned int> *uniqueSceneRefPts =
         new thrust::device_vector<unsigned int>(this->votes->size());
-    this->maxval = new thrust::device_vector<int>(this->votes->size());
+    this->maxval = new thrust::device_vector<unsigned int>(this->votes->size());
     thrust::device_vector<unsigned int> *maxModelAngleCode =
         new thrust::device_vector<unsigned int>(this->votes->size());
-    {
-        // allows us to use "_1" instead of "thrust::placeholders::_1"
-        using namespace thrust::placeholders;
 
-        // OH GOD HOW DO YOU FORMAT THIS?!?
-        thrust::reduce_by_key
-            (// key input: step function that increments for every row
-             thrust::make_transform_iterator(votes->begin()+1, (_1 >> 32)),
-             thrust::make_transform_iterator(votes->end(), (_1 >> 32)),
-             // value input: (value, index) tuple
-             thrust::make_zip_iterator(thrust::make_tuple(voteCounts->begin()+1,
-                                                          thrust::make_transform_iterator(votes->begin()+1,
-                                                                                          (_1 & (-1ul >> 32))))),
-             uniqueSceneRefPts->begin(),
-             thrust::make_zip_iterator(thrust::make_tuple(this->maxval->begin(),
-                                                          maxModelAngleCode->begin())),
-             thrust::equal_to<unsigned int>(),
-             // compare by first element of tuple
-             thrust::maximum<thrust::tuple<int, unsigned int> >()
-             );
-    }
+    thrust::reduce_by_key
+        (// key input: step function that increments for every row
+         thrust::make_transform_iterator(votes->begin()+1, high_32_bits()),
+         thrust::make_transform_iterator(votes->end(), high_32_bits()),
+         // value input: (value, index) tuple
+         thrust::make_zip_iterator(thrust::make_tuple(voteCounts->begin()+1,
+                                                      thrust::make_transform_iterator(votes->begin()+1,
+                                                                                      low_32_bits()))),
+         uniqueSceneRefPts->begin(),
+         thrust::make_zip_iterator(thrust::make_tuple(this->maxval->begin(),
+                                                      maxModelAngleCode->begin())),
+         thrust::equal_to<unsigned int>(),
+         // compare by first element of tuple
+         thrust::maximum<thrust::tuple<unsigned int, unsigned int> >());
 
     // // populates voteCodes and voteCounts, sorts votes
     // this->accumulateVotes();

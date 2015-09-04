@@ -13,10 +13,10 @@
 #define MAX_NBLOCKS 1024
 //Algorithm macros
 #define MIN(X,Y) ((X) < (Y) ? (X) : (Y))
-#define N_ANGLE 32
+#define N_ANGLE 30
 #define D_ANGLE0 (2.0f*float(CUDART_PI_F))/float(N_ANGLE)  //this one is for discretizing the feature in ppf_kernel
 #define D_ANGLE1 (2.0f*float(CUDART_PI_F))/float(N_ANGLE - 1)  //this one is for assigining alpha indices [0 31]
-#define D_DIST 0.1f
+#define D_DIST 0.035317969013662f  // generated based on MATLAB model_description.m:12, specifically for chair model
 #define SCORE_THRESHOLD 0
 
 __global__ void ppf_kernel(float3 *points, float3 *norms, float4 *out, int count);

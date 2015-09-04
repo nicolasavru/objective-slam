@@ -18,9 +18,9 @@ Scene::Scene(thrust::host_vector<float3> *points, thrust::host_vector<float3> *n
     this->hashKeys = new thrust::device_vector<unsigned int>(this->modelPPFs->size());
     
     int blocks = std::min(((int)(this->modelPPFs->size()) + BLOCK_SIZE - 1) / BLOCK_SIZE, MAX_NBLOCKS);
-    ppf_hash_kernel<<<blocks/BLOCK_SIZE,BLOCK_SIZE>>>(RAW_PTR(this->modelPPFs),
-                                                                       RAW_PTR(this->hashKeys),
-                                                                       this->modelPPFs->size());
+    ppf_hash_kernel<<<blocks,BLOCK_SIZE>>>(RAW_PTR(this->modelPPFs),
+                                           RAW_PTR(this->hashKeys),
+                                           this->modelPPFs->size());
 }
 
 Scene::~Scene(){
@@ -32,6 +32,7 @@ Scene::~Scene(){
 
 void Scene::initPPFs(thrust::host_vector<float3> *points, thrust::host_vector<float3> *normals, int n){
     this->n = n;
+    // check if these are used later or can be discarded after this function
     this->modelPoints = new thrust::device_vector<float3>(*points);
     this->modelNormals = new thrust::device_vector<float3>(*normals);
     this->modelPPFs = new thrust::device_vector<float4>(n*n);
@@ -47,10 +48,31 @@ void Scene::initPPFs(thrust::host_vector<float3> *points, thrust::host_vector<fl
     #endif
 
     int blocks = std::min(((int)(this->n + BLOCK_SIZE) - 1) / BLOCK_SIZE, MAX_NBLOCKS);
+    // MATLAB drost.m:59, all of model_description.m
+    // ppf_kernel computes ppfs and descritizes them, but does *not* hash them
+    // hashing is done by ppf_hash_kernel, called only for model, not scene (model.cu:46)
     ppf_kernel<<<blocks,BLOCK_SIZE>>>(RAW_PTR(this->modelPoints),
-                                            RAW_PTR(this->modelNormals),
-                                            RAW_PTR(this->modelPPFs),
-                                            n);
+                                      RAW_PTR(this->modelNormals),
+                                      RAW_PTR(this->modelPPFs),
+                                      n);
+
+    /* DEBUG */
+    // COMPARE modelPPFs to MATLAB F_disc (model_description.m and voting_scheme.m)
+    float *h_modelPPFs = new float[4*n*n];
+
+    cudaMemcpy(h_modelPPFs, RAW_PTR(this->modelPPFs), sizeof(float)*(4*n*n), cudaMemcpyDeviceToHost);
+    //Write out binary file of result
+    FILE *fidOut;
+    size_t result;
+
+    fidOut = fopen("TestModelPPFs.bin","wb");
+    if(fidOut == NULL){fputs("File Open error: fidOut: TestModelPPFs.bin",stderr); exit (1);}
+    result = fwrite(h_modelPPFs, sizeof(float), 4*n*n, fidOut);
+    if (result != (4*n*n)){fputs("File Write error: fidOut: h_modelPPFs",stderr); exit (2);}
+    result = fclose(fidOut);
+    if (result != 0){fputs("File Close error: fidOut: TestModelPPFs",stderr); exit (3);}
+    delete [] h_modelPPFs;
+    /* DEBUG */
 
     #ifdef DEBUG
         // end cuda timer

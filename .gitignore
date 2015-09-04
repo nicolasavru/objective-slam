@@ -2,4 +2,5 @@
 *.pcd
 *.swp
 *.swo
+*.png
 build/
