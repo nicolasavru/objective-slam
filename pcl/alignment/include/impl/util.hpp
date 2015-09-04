@@ -26,7 +26,7 @@ void write_device_array(char *filename, T *data, int n){
     T *host_array = new T[n];
     if(cudaMemcpy(host_array, data, n*sizeof(T), cudaMemcpyDeviceToHost)
        != cudaSuccess){
-        fprintf(stderr, "Error copy data from device to host.");
+        fprintf(stderr, "Error copying data from device to host.");
         exit(4);
     }
     write_array(filename, host_array, n);
