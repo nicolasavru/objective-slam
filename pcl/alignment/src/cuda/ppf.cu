@@ -191,6 +191,8 @@ Eigen::Matrix4f ply_load_main(float3 *scenePoints, float3 *sceneNormals, int sce
 
     // build model description
     Model *model = new Model(objectPointsVec, objectNormsVec, objectN);
+    Eigen::Matrix4f DEAD;
+    return DEAD;
     Scene *scene = new Scene(scenePointsVec, sceneNormsVec, sceneN);
 
     model->ppf_lookup(scene);
