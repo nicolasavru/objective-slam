@@ -2,7 +2,7 @@
 #define UTIL_IMPL_H
 
 template <typename T>
-void write_array(char *filename, T *data, int n){
+void write_array(const char *filename, T *data, int n){
     FILE *fp;
 
     if(!(fp = fopen(filename,"wb"))){
@@ -22,7 +22,7 @@ void write_array(char *filename, T *data, int n){
 }
 
 template <typename T>
-void write_device_array(char *filename, T *data, int n){
+void write_device_array(const char *filename, T *data, int n){
     T *host_array = new T[n];
     if(cudaMemcpy(host_array, data, n*sizeof(T), cudaMemcpyDeviceToHost)
        != cudaSuccess){
@@ -34,7 +34,7 @@ void write_device_array(char *filename, T *data, int n){
 }
 
 template <typename T>
-void write_device_vector(char *filename, thrust::device_vector<T> *data){
+void write_device_vector(const char *filename, thrust::device_vector<T> *data){
     write_device_array(filename, RAW_PTR(data), data->size());
 }
 

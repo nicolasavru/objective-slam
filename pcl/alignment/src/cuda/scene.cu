@@ -17,7 +17,7 @@ Scene::Scene(){}
 Scene::Scene(thrust::host_vector<float3> *points, thrust::host_vector<float3> *normals, int n){
     this->initPPFs(points, normals, n);
     this->hashKeys = new thrust::device_vector<unsigned int>(this->modelPPFs->size());
-    
+
     int blocks = std::min(((int)(this->modelPPFs->size()) + BLOCK_SIZE - 1) / BLOCK_SIZE, MAX_NBLOCKS);
     ppf_hash_kernel<<<blocks,BLOCK_SIZE>>>(RAW_PTR(this->modelPPFs),
                                            RAW_PTR(this->hashKeys),
@@ -57,17 +57,13 @@ void Scene::initPPFs(thrust::host_vector<float3> *points, thrust::host_vector<fl
                                       RAW_PTR(this->modelPPFs),
                                       n);
 
-    /* DEBUG */
-    write_device_vector("TestModelPPFs.bin", this->modelPPFs);
-    /* DEBUG */
-
     #ifdef DEBUG
         // end cuda timer
         HANDLE_ERROR(cudaEventRecord(stop, 0));
         HANDLE_ERROR(cudaEventSynchronize(stop));
         float elapsedTime;
         HANDLE_ERROR(cudaEventElapsedTime(&elapsedTime, start, stop));
-        fprintf(stderr, "Time to generate PPFs:  %3.1f ms\n", elapsedTime);
+        fprintf(stderr, "Time to generate PPFs: %3.1f ms\n", elapsedTime);
     #endif
 }
 

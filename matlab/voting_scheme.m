@@ -27,7 +27,8 @@ I_rows = zeros(indices(end), 1);
 I_cols = zeros(indices(end), 1);
 max_tots = zeros(indices(end), 1);
 size(max_tots)
-keyboard
+
+F_disc_mat = zeros(4,size(index_pairs,1));
 
 for ii = 1:size(index_pairs,1)
   if mod(ii, 1000) == 0
@@ -44,6 +45,7 @@ for ii = 1:size(index_pairs,1)
 
   F = real(point_pair_feature(s_r, n_r_s, s_i, scene_normals(index_pairs(ii,2),:)));
   F_disc = my_discretize(F, d_dist, d_angle);
+  F_disc_mat(:,ii) = F_disc';
 
   hash = DataHash(F_disc, Opt);
   key = hex2num(hash(1:16));
@@ -86,7 +88,7 @@ for ii = 1:size(index_pairs,1)
     max_tots(index_pairs(ii,1)) = max_tot;
   end
 end
-
+%keyboard
 max_tot = max(max_tots);
 max_tots = max_tots ./ max_tot;
 max_ind = find(max_tots > accum_thresh);

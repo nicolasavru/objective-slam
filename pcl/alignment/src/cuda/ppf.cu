@@ -191,8 +191,6 @@ Eigen::Matrix4f ply_load_main(float3 *scenePoints, float3 *sceneNormals, int sce
 
     // build model description
     Model *model = new Model(objectPointsVec, objectNormsVec, objectN);
-    Eigen::Matrix4f DEAD;
-    return DEAD;
     Scene *scene = new Scene(scenePointsVec, sceneNormsVec, sceneN);
 
     model->ppf_lookup(scene);
@@ -212,20 +210,20 @@ Eigen::Matrix4f ply_load_main(float3 *scenePoints, float3 *sceneNormals, int sce
     int m = 0;
     int m_idx = 0;
     for (int i=0; i<maxval->size(); i++){
-//        cout << "num_votes: " << (*maxval)[i] << endl;
-//        if((*maxval)[i] > m){
-//            m_idx = i;
-//            m = (*maxval)[i];
-//        }
-//        cout << "transforms(:,:," << i+1 << ") = [";
-//        for (int j=0; j<4; j++){
-//            for (int k=0; k<4; k++){
-//                cout << (*transformations)[i*16+j*4+k] << " ";
-//            }
-//            cout << ";" << endl;
-//        }
-//        cout << "];" << endl;
-//        cout << endl << endl;
+       // cout << "num_votes: " << (*maxval)[i] << endl;
+       if((*maxval)[i] > m){
+           m_idx = i;
+           m = (*maxval)[i];
+       }
+       // cout << "transforms(:,:," << i+1 << ") = [";
+       // for (int j=0; j<4; j++){
+       //     for (int k=0; k<4; k++){
+       //         cout << (*transformations)[i*16+j*4+k] << " ";
+       //     }
+       //     cout << ";" << endl;
+       // }
+       // cout << "];" << endl;
+       // cout << endl << endl;
     }
 
     Eigen::Matrix4f T;

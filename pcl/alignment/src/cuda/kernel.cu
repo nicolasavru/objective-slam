@@ -257,8 +257,7 @@ __device__ void trans_model_scene(float3 m_r, float3 n_r_m, float3 m_i,
     T_tmp2[4][4], T[4][4];
     float4 n_tmp;
 
-    // probably not necessary due to PCL resampling onto voxel grid
-    // m_r = discretize(m_r, d_dist);
+    m_r = discretize(m_r, d_dist);
     m_r = times(-1, m_r);
 
     trans(m_r, transm);
@@ -290,7 +289,8 @@ __device__ void trans_model_scene(float3 m_r, float3 n_r_m, float3 m_i,
     u.x = 0;
     v.x = 0;
     float alpha = atan2f(cross(u, v).x, dot(u, v));
-    alpha_idx = (int)((alpha + CUDART_PI_F)*N_ANGLE/(2*CUDART_PI_F));
+    alpha = quant_downf(alpha + CUDART_PI_F, D_ANGLE0);
+    alpha_idx = (int) (lrintf(alpha/D_ANGLE0));
     rotx(alpha, rot_x);
 
     invht(T_s_g, T_tmp);
@@ -343,7 +343,7 @@ __device__ void compute_transforms(unsigned int angle_idx, float3 m_r,
     mat4f_mul(rot_z, rot_y, T_tmp);
     mat4f_mul(T_tmp, transm, T_s_g);
 
-    rotx(angle_idx*2*CUDART_PI_F/(N_ANGLE-1), rot_x);
+    rotx(angle_idx*D_ANGLE0, rot_x);
     invht(T_s_g, T_tmp);
     mat4f_mul(T_tmp, rot_x, T_tmp2);
     mat4f_mul(T_tmp2, T_m_g, T_arr);
@@ -488,7 +488,7 @@ __global__ void ppf_vote_kernel(unsigned int *sceneKeys, unsigned int *sceneIndi
             trans_model_scene(model_r_point, model_r_norm, model_i_point,
                               scene_r_point, scene_r_norm, scene_i_point,
                               D_DIST, alpha_idx);
-            votes_old[thisFirstPPFIndex + i] =
+            votes_old[idx*modelSize + i] =
                 (((unsigned long) scene_r_index) << 32) | (model_r_index << 6) | (alpha_idx);
         }
 
@@ -587,7 +587,7 @@ __global__ void trans_calc_kernel(unsigned int *uniqueSceneRefPts,
     unsigned int angle_idx, model_point_idx, scene_point_idx;
     unsigned long vote;
 
-    unsigned int low6 = ((unsigned long) -1) >> 26;
+    unsigned int low6 = ((unsigned int) -1) >> 26;
     // unsigned long hi32 = ((unsigned long) -1) << 32;
     // unsigned long model_point_mask = ((unsigned long) -1) ^ hi32 ^ low6;
     float m_roty, m_rotz, s_roty, s_rotz;

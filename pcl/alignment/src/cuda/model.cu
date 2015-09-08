@@ -11,6 +11,7 @@
 
 #include "model.h"
 #include "impl/ppf_utils.hpp"
+#include "impl/util.hpp"
 #include "kernel.h"
 #include "book.h"
 
@@ -33,63 +34,54 @@ struct low_32_bits : public thrust::unary_function<unsigned long,unsigned int>{
 Model::Model(thrust::host_vector<float3> *points, thrust::host_vector<float3> *normals, int n){
     this->initPPFs(points, normals, n);
 
-    // key2ppfMap: associated indices ppf indices
+    // SLAM++ Algorithm 1 lines 1-5
+    // key2ppfMap: indices into modelPPFs
     this->key2ppfMap = new thrust::device_vector<unsigned int>(this->modelPPFs->size());
     thrust::sequence(key2ppfMap->begin(), key2ppfMap->end());
 
-    // hashKeys_old: array of hashKeys
-    thrust::device_vector<unsigned int> *hashKeys_old =
+    // nonunique_hashkeys: array of hashKeys
+    thrust::device_vector<unsigned int> *nonunique_hashkeys =
         new thrust::device_vector<unsigned int>(this->modelPPFs->size());
 
     // for each ppf, compute a 32-bit hash
     int blocks = std::min(((int)(this->modelPPFs->size()) + BLOCK_SIZE - 1) / BLOCK_SIZE, MAX_NBLOCKS);
     ppf_hash_kernel<<<blocks,BLOCK_SIZE>>>(RAW_PTR(this->modelPPFs),
-                                           RAW_PTR(hashKeys_old),
+                                           RAW_PTR(nonunique_hashkeys),
                                            this->modelPPFs->size());
-// #ifdef DEBUG
-//     {
-//         using namespace std;
-//         /* DEBUG */
-//         fprintf(stderr, "%d, %d\n", this->modelPPFs->size(), this->modelPPFs->size()/BLOCK_SIZE);
-//         /* DEBUG */
 
-//         thrust::host_vector<float4> *ppfs = new thrust::host_vector<float4>(*(this->modelPPFs));
-//         for(int i = 0; i < 20; i++){
-//             cout << "PPF Number: " << i << endl;
-//             cout << (*ppfs)[i].x << endl;
-//             cout << (*ppfs)[i].y << endl;
-//             cout << (*ppfs)[i].z << endl;
-//             cout << (*ppfs)[i].w << endl;
-//         }
+    // SLAM++ Algorithm 1 line 6
+    // Instead of concatenating the hash and the index and sorting the
+    // 64-bit values, we're doing the equivalent operation of sorting
+    // the indices using the hashkeys as the sort key.
+    thrust::sort_by_key(nonunique_hashkeys->begin(), nonunique_hashkeys->end(), key2ppfMap->begin());
 
-//         thrust::host_vector<unsigned int> *hah = new thrust::host_vector<unsigned int>(*hashKeys_old);
-//         cout << "hashKeys_old" << endl;
-//         for(int i = 0; i < 20; i++){
-//             cout << (*hah)[i] << endl;
-//         }
-//     }
-// #endif
-
-    thrust::sort_by_key(hashKeys_old->begin(), hashKeys_old->end(), key2ppfMap->begin());
+    // key2ppfMap is now sorted such that the indices of identical
+    // PPFs are adjacent. We can now count the number of occurances of
+    // each unique PPF by taking a histogram of the hash keys. Sorting
+    // the hash keys allows the histogram to be computed efficiently
+    // using a reduce_by_key.
 
     this->hashKeys = new thrust::device_vector<unsigned int>();
     this->ppfCount = new thrust::device_vector<unsigned int>();
-    std::cerr << "hashkey_bins:" << std::endl;
-    histogram_destructive(*hashKeys_old, *(this->hashKeys), *(this->ppfCount));
-    delete hashKeys_old;
+    histogram_destructive(*nonunique_hashkeys, *(this->hashKeys), *(this->ppfCount));
+    delete nonunique_hashkeys;
 
-    // create list of beginning indices of blocks of ppfs having equal hashes
+    // SLAM++ Algorithm 1 line 16
+    // Find the indices in key2ppfMap of the beginning of each block of identical PPFs.
     this->firstPPFIndex = new thrust::device_vector<unsigned int>(this->hashKeys->size());
-
     thrust::exclusive_scan(this->ppfCount->begin(),
                            this->ppfCount->end(),
                            this->firstPPFIndex->begin());
+    /* DEBUG */
+    fprintf(stderr, "numkeys: %u\n", this->hashKeys->size());
+    /* DEBUG */
 
     this->votes = NULL;
     this->voteCodes = NULL;
     this->voteCounts = NULL;
     this->firstVecIndex = NULL;
 }
+
 // TODO: Deallocate memory for things not here yet
 Model::~Model(){
     delete this->ppfCount;
@@ -122,12 +114,10 @@ void Model::ppf_lookup(Scene *scene){
     // Steps 1-3
     // launch voting kernel instance for each scene reference point
     unsigned int lastIndex, lastCount;
-    thrust::device_vector<unsigned long> *votes_old = new thrust::device_vector<unsigned long>(scene->getModelPPFs()->size(),0);
+    thrust::device_vector<unsigned long> *votes_old = new thrust::device_vector<unsigned long>(scene->getModelPPFs()->size()*this->modelPoints->size(),0);
 
     // populates parallel arrays votes and vecs_old
     int blocks = std::min(((int)(scene->getHashKeys()->size()) + BLOCK_SIZE - 1) / BLOCK_SIZE, MAX_NBLOCKS);
-    std::cout << "blocks: " << blocks << std::endl;
-    std::cout << scene->getHashKeys()->size() << ", " << blocks << ", " << BLOCK_SIZE << ", " << MAX_NBLOCKS << std::endl;
     ppf_vote_kernel<<<blocks,BLOCK_SIZE>>>
         (RAW_PTR(scene->getHashKeys()), RAW_PTR(sceneIndices),
          RAW_PTR(this->hashKeys), RAW_PTR(this->ppfCount),
@@ -151,7 +141,6 @@ void Model::ppf_lookup(Scene *scene){
 //        }
     }
 #endif
-
     thrust::sort(votes_old->begin(), votes_old->end());
     this->votes = new thrust::device_vector<unsigned long>();
     this->voteCounts = new thrust::device_vector<unsigned int>();
