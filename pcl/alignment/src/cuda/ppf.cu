@@ -210,11 +210,12 @@ Eigen::Matrix4f ply_load_main(float3 *scenePoints, float3 *sceneNormals, int sce
     int m = 0;
     int m_idx = 0;
     for (int i=0; i<maxval->size(); i++){
-       // cout << "num_votes: " << (*maxval)[i] << endl;
        if((*maxval)[i] > m){
            m_idx = i;
            m = (*maxval)[i];
        }
+
+       // cout << "num_votes: " << (*maxval)[i] << endl;
        // cout << "transforms(:,:," << i+1 << ") = [";
        // for (int j=0; j<4; j++){
        //     for (int k=0; k<4; k++){
@@ -234,27 +235,10 @@ Eigen::Matrix4f ply_load_main(float3 *scenePoints, float3 *sceneNormals, int sce
     }
 
 
-    // // copy ppfs back to host
-    // thrust::host_vector<float> *transformations = new thrust::host_vector<float>(*model->getTransformations());
-
-    // // write out transformations
-    // for (int i=0; i<transformations->size()/16; i++){
-    //     cout << "Transformtion[" << i << "]" << endl;
-    //     cout << "[";
-    //     for (int j=0; j<4; j++){
-    //         for (int k=0; k<4; k++){
-    //             cout << (*transformations)[i*16+j*4+k] << " ";
-    //         }
-    //         cout << ";" << endl;
-    //     }
-    //     cout << "]" << endl;
-    //     cout << endl << endl;
-    // }
-
-    // Deallocate ram
-//    delete points;
-//    delete norms;
-//    delete ppfs;
+    // // Deallocate ram
+    // delete points;
+    // delete norms;
+    // delete ppfs;
 
     delete model;
     delete scene;

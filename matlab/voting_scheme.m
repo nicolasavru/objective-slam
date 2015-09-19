@@ -88,11 +88,11 @@ for ii = 1:size(index_pairs,1)
     max_tots(index_pairs(ii,1)) = max_tot;
   end
 end
-%keyboard
-max_tot = max(max_tots);
+
+max_tot = max(max_tots)
 max_tots = max_tots ./ max_tot;
 max_ind = find(max_tots > accum_thresh);
-
+%keyboard
 ret_rows = I_rows(max_ind);
 ret_cols = I_cols(max_ind);
 

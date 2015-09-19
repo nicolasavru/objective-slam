@@ -125,7 +125,7 @@ int main(int argc, char **argv){
 
     // Downsample
     pcl::console::print_info("Downsampling...\n");
-    int object_n = 2500;
+    int object_n = 2000;
     int scene_n = 1000;
     pcl::console::print_info("Object size before filtering: %u (%u x %u)\n",
                              object->size(), object-> width, object->height);

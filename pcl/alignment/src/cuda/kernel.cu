@@ -2,6 +2,7 @@
 #include <cuda.h>
 #include <cuda_runtime.h>                // Stops underlining of __global__
 #include <device_launch_parameters.h>    // Stops underlining of threadIdx etc.
+#include <stdio.h>
 #include "kernel.h"
 
 // FNV-1a hash function
@@ -257,13 +258,13 @@ __device__ void trans_model_scene(float3 m_r, float3 n_r_m, float3 m_i,
     T_tmp2[4][4], T[4][4];
     float4 n_tmp;
 
-    m_r = discretize(m_r, d_dist);
+    // m_r = discretize(m_r, d_dist);
     m_r = times(-1, m_r);
 
     trans(m_r, transm);
     roty(atan2f(n_r_m.z, n_r_m.x), rot_y);
     n_tmp = homogenize(n_r_m);
-    mat4f_vmul(rot_y, n_tmp);
+    n_tmp = mat4f_vmul(rot_y, n_tmp);
     rotz(-1*atan2f(n_tmp.y, n_tmp.x), rot_z);
     mat4f_mul(rot_z, rot_y, T_tmp);     //POTENTIALLY SLOW
     mat4f_mul(T_tmp, transm, T_m_g);    //POTENTIALLY SLOW
@@ -272,7 +273,7 @@ __device__ void trans_model_scene(float3 m_r, float3 n_r_m, float3 m_i,
     trans(s_r, transm);
     roty(atan2f(n_r_s.z, n_r_s.x), rot_y);
     n_tmp = homogenize(n_r_s);
-    mat4f_vmul(rot_y, n_tmp);
+    n_tmp = mat4f_vmul(rot_y, n_tmp);
     rotz(-1*atan2f(n_tmp.y, n_tmp.x), rot_z);
     mat4f_mul(rot_z, rot_y, T_tmp);     //POTENTIALLY SLOW
     mat4f_mul(T_tmp, transm, T_s_g);    //POTENTIALLY SLOW
@@ -290,7 +291,7 @@ __device__ void trans_model_scene(float3 m_r, float3 n_r_m, float3 m_i,
     v.x = 0;
     float alpha = atan2f(cross(u, v).x, dot(u, v));
     alpha = quant_downf(alpha + CUDART_PI_F, D_ANGLE0);
-    alpha_idx = (int) (lrintf(alpha/D_ANGLE0));
+    alpha_idx = (unsigned int) (lrintf(alpha/D_ANGLE0));
     rotx(alpha, rot_x);
 
     invht(T_s_g, T_tmp);
@@ -308,13 +309,13 @@ __device__ void compute_rot_angles(float3 n_r_m, float3 n_r_s,
     *m_roty = atan2f(n_r_m.z, n_r_m.x);
     roty(*m_roty, rot_y);
     n_tmp = homogenize(n_r_m);
-    mat4f_vmul(rot_y, n_tmp);
+    n_tmp = mat4f_vmul(rot_y, n_tmp);
     *m_rotz = -1*atan2f(n_tmp.y, n_tmp.x);
 
     *s_roty = atan2f(n_r_s.z, n_r_s.x);
     roty(*s_roty, rot_y);
     n_tmp = homogenize(n_r_s);
-    mat4f_vmul(rot_y, n_tmp);
+    n_tmp = mat4f_vmul(rot_y, n_tmp);
     *s_rotz = -1*atan2f(n_tmp.y, n_tmp.x);
 }
 
@@ -343,7 +344,7 @@ __device__ void compute_transforms(unsigned int angle_idx, float3 m_r,
     mat4f_mul(rot_z, rot_y, T_tmp);
     mat4f_mul(T_tmp, transm, T_s_g);
 
-    rotx(angle_idx*D_ANGLE0, rot_x);
+    rotx(angle_idx*D_ANGLE0 - CUDART_PI_F, rot_x);
     invht(T_s_g, T_tmp);
     mat4f_mul(T_tmp, rot_x, T_tmp2);
     mat4f_mul(T_tmp2, T_m_g, T_arr);
