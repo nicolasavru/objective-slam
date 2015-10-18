@@ -204,27 +204,32 @@ Eigen::Matrix4f ply_load_main(float3 *scenePoints, float3 *sceneNormals, int sce
 
     // copy ppfs back to host
     thrust::host_vector<float> *transformations = new thrust::host_vector<float>(*model->getTransformations());
-    thrust::host_vector<unsigned int> *maxval = new thrust::host_vector<unsigned int>(*model->maxval);
+    // thrust::host_vector<unsigned int> *maxval = new thrust::host_vector<unsigned int>(*model->maxval);
+    thrust::host_vector<unsigned int> *maxval =
+        new thrust::host_vector<unsigned int>(*model->vote_counts_out);
 
     // write out transformations
     int m = 0;
     int m_idx = 0;
-    for (int i=0; i<maxval->size(); i++){
+    for (int i=1; i<maxval->size(); i++){
        if((*maxval)[i] > m){
            m_idx = i;
            m = (*maxval)[i];
        }
 
-       // cout << "num_votes: " << (*maxval)[i] << endl;
-       // cout << "transforms(:,:," << i+1 << ") = [";
-       // for (int j=0; j<4; j++){
-       //     for (int k=0; k<4; k++){
-       //         cout << (*transformations)[i*16+j*4+k] << " ";
-       //     }
-       //     cout << ";" << endl;
-       // }
-       // cout << "];" << endl;
-       // cout << endl << endl;
+       if((*maxval)[i] < 2){
+           continue;
+       }
+       cout << "num_votes: " << (*maxval)[i] << endl;
+       cout << "transforms(:,:," << i+1 << ") = [";
+       for (int j=0; j<4; j++){
+           for (int k=0; k<4; k++){
+               cout << (*transformations)[i*16+j*4+k] << " ";
+           }
+           cout << ";" << endl;
+       }
+       cout << "];" << endl;
+       cout << endl << endl;
     }
 
     Eigen::Matrix4f T;

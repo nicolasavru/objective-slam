@@ -146,26 +146,99 @@ void Model::ppf_lookup(Scene *scene){
     this->voteCounts = new thrust::device_vector<unsigned int>();
     histogram_destructive(*votes_old, *(this->votes), *(this->voteCounts));
 
-    thrust::device_vector<unsigned int> *uniqueSceneRefPts =
-        new thrust::device_vector<unsigned int>(this->votes->size());
-    this->maxval = new thrust::device_vector<unsigned int>(this->votes->size());
-    thrust::device_vector<unsigned int> *maxModelAngleCode =
-        new thrust::device_vector<unsigned int>(this->votes->size());
+    this->transformations = new thrust::device_vector<float>(this->votes->size()*16);
+    /* DEBUG */
+    fprintf(stderr, "votes_size: %d\n", this->votes->size());
+    /* DEBUG */
 
-    thrust::reduce_by_key
-        (// key input: step function that increments for every row
-         thrust::make_transform_iterator(votes->begin()+1, high_32_bits()),
-         thrust::make_transform_iterator(votes->end(), high_32_bits()),
-         // value input: (value, index) tuple
-         thrust::make_zip_iterator(thrust::make_tuple(voteCounts->begin()+1,
-                                                      thrust::make_transform_iterator(votes->begin()+1,
-                                                                                      low_32_bits()))),
-         uniqueSceneRefPts->begin(),
-         thrust::make_zip_iterator(thrust::make_tuple(this->maxval->begin(),
-                                                      maxModelAngleCode->begin())),
-         thrust::equal_to<unsigned int>(),
-         // compare by first element of tuple
-         thrust::maximum<thrust::tuple<unsigned int, unsigned int> >());
+    blocks = std::min(((int)(this->votes->size()) + BLOCK_SIZE - 1) / BLOCK_SIZE, MAX_NBLOCKS);
+
+
+    trans_calc_kernel2<<<blocks,BLOCK_SIZE>>>
+        (RAW_PTR(votes),
+         RAW_PTR(this->modelPoints), RAW_PTR(this->modelNormals),
+         RAW_PTR(scene->getModelPoints()), RAW_PTR(scene->getModelNormals()),
+         RAW_PTR(this->transformations),
+         this->votes->size());
+
+    this->transformation_trans = new thrust::device_vector<float3>(this->votes->size());
+    this->transformation_rots = new thrust::device_vector<float4>(this->votes->size());
+    mat2transquat_kernel<<<blocks,BLOCK_SIZE>>>
+        (RAW_PTR(this->transformations),
+         RAW_PTR(this->transformation_trans),
+         RAW_PTR(this->transformation_rots),
+         this->votes->size());
+
+    thrust::device_vector<unsigned int> *nonunique_trans_hash =
+        new thrust::device_vector<unsigned int>(this->votes->size());
+    thrust::device_vector<unsigned int> *adjacent_trans_hash =
+        new thrust::device_vector<unsigned int>(27*this->votes->size());
+    trans2idx_kernel<<<blocks,BLOCK_SIZE>>>
+        (RAW_PTR(this->transformation_trans),
+         RAW_PTR(nonunique_trans_hash),
+         RAW_PTR(adjacent_trans_hash),
+         this->votes->size());
+
+    this->key2transMap = new thrust::device_vector<unsigned int>(this->votes->size());
+    thrust::sequence(key2transMap->begin(), key2transMap->end());
+    thrust::sort_by_key(nonunique_trans_hash->begin(),
+                        nonunique_trans_hash->end(),
+                        key2transMap->begin());
+
+    this->trans_hash = new thrust::device_vector<unsigned int>(this->votes->size());
+    this->transCount = new thrust::device_vector<unsigned int>(this->votes->size());
+    histogram_destructive(*nonunique_trans_hash, *(this->trans_hash), *(this->transCount));
+    delete nonunique_trans_hash;
+    this->firstTransIndex = new thrust::device_vector<unsigned int>(this->votes->size());
+    thrust::exclusive_scan(this->transCount->begin(),
+                           this->transCount->end(),
+                           this->firstTransIndex->begin());
+
+    thrust::device_vector<unsigned int> *transIndices =
+        new thrust::device_vector<unsigned int>(adjacent_trans_hash->size());
+    thrust::lower_bound(this->trans_hash->begin(),
+                        this->trans_hash->end(),
+                        adjacent_trans_hash->begin(),
+                        adjacent_trans_hash->end(),
+                        transIndices->begin());
+
+    // write_device_vector("adjacent_trans_hash", adjacent_trans_hash);
+    // write_device_vector("transCount", transCount);
+
+    this->vote_counts_out = new thrust::device_vector<unsigned int>(*(this->voteCounts));
+    blocks = std::min(((int)(this->votes->size()) + BLOCK_SIZE - 1) / BLOCK_SIZE, MAX_NBLOCKS);
+    rot_clustering_kernel<<<blocks,BLOCK_SIZE>>>
+        (RAW_PTR(this->transformation_trans), RAW_PTR(this->transformation_rots),
+         RAW_PTR(this->voteCounts), RAW_PTR(adjacent_trans_hash),
+         RAW_PTR(transIndices), RAW_PTR(this->trans_hash),
+         RAW_PTR(this->transCount), RAW_PTR(this->firstTransIndex),
+         RAW_PTR(this->key2transMap), RAW_PTR(this->vote_counts_out),
+         this->votes->size());
+
+
+    // thrust::device_vector<unsigned int> *uniqueSceneRefPts =
+    //     new thrust::device_vector<unsigned int>(this->votes->size());
+    // this->maxval = new thrust::device_vector<unsigned int>(this->votes->size());
+    // thrust::device_vector<unsigned int> *maxModelAngleCode =
+    //     new thrust::device_vector<unsigned int>(this->votes->size());
+
+    // thrust::reduce_by_key
+    //     (// key input: step function that increments for every row
+    //      thrust::make_transform_iterator(votes->begin()+1, high_32_bits()),
+    //      thrust::make_transform_iterator(votes->end(), high_32_bits()),
+    //      // value input: (value, index) tuple
+    //      thrust::make_zip_iterator(thrust::make_tuple(voteCounts->begin()+1,
+    //                                                   thrust::make_transform_iterator(votes->begin()+1,
+    //                                                                                   low_32_bits()))),
+    //      uniqueSceneRefPts->begin(),
+    //      thrust::make_zip_iterator(thrust::make_tuple(this->maxval->begin(),
+    //                                                   maxModelAngleCode->begin())),
+    //      thrust::equal_to<unsigned int>(),
+    //      // compare by first element of tuple
+    //      thrust::maximum<thrust::tuple<unsigned int, unsigned int> >());
+
+
+
 
     // // populates voteCodes and voteCounts, sorts votes
     // this->accumulateVotes();
@@ -239,44 +312,17 @@ void Model::ppf_lookup(Scene *scene){
 
     // Step 8, 9
     // call trans_calc_kernel
-    this->transformations = new thrust::device_vector<float>(this->votes->size()*16);
+    // this->transformations = new thrust::device_vector<float>(this->votes->size()*16);
 
-    blocks = std::min(((int)(this->votes->size()) + BLOCK_SIZE - 1) / BLOCK_SIZE, MAX_NBLOCKS);
-    trans_calc_kernel<<<blocks,BLOCK_SIZE>>>
-        (RAW_PTR(uniqueSceneRefPts), RAW_PTR(maxModelAngleCode),
-         RAW_PTR(this->modelPoints), RAW_PTR(this->modelNormals),
-         RAW_PTR(scene->getModelPoints()), RAW_PTR(scene->getModelNormals()),
-         RAW_PTR(this->transformations),
-         this->votes->size());
+    // blocks = std::min(((int)(this->votes->size()) + BLOCK_SIZE - 1) / BLOCK_SIZE, MAX_NBLOCKS);
+    // trans_calc_kernel<<<blocks,BLOCK_SIZE>>>
+    //     (RAW_PTR(uniqueSceneRefPts), RAW_PTR(maxModelAngleCode),
+    //      RAW_PTR(this->modelPoints), RAW_PTR(this->modelNormals),
+    //      RAW_PTR(scene->getModelPoints()), RAW_PTR(scene->getModelNormals()),
+    //      RAW_PTR(this->transformations),
+    //      this->votes->size());
 
     #ifdef DEBUG
-        {
-            // using namespace std;
-            // for (int i=0; i<maxidx->size(); i++){
-            //     std::cerr << (*maxidx)[i] << std::endl;
-            // }
-            // std::cerr << std::endl;
-            // for (int i=0; i<accumulator->size(); i++){
-            //     std::cerr << (*accumulator)[i] << std::endl;
-            // }
-            // std::cerr << std::endl;
-            // for (int i=0; i<vecs->size(); i++){
-            //     std::cerr << (*vecs)[i] << std::endl;
-            // }
-//            std::cerr << std::endl;
-//            for (int i=0; i<votes->size(); i++){
-//                std::cerr << (*votes)[i] << std::endl;
-//            }
-            // std::cerr << std::endl;
-            // for (int i=0; i<hashKeys->size(); i++){
-            //     std::cerr << (*hashKeys)[i] << std::endl;
-            // }
-//            std::cerr << std::endl;
-//            for (int i=0; i<modelPPFs->size(); i++){
-//                std::cerr << (*modelPPFs)[i] << std::endl;
-//            }
-        }
-
         // end cuda timer
         HANDLE_ERROR(cudaEventRecord(stop, 0));
         HANDLE_ERROR(cudaEventSynchronize(stop));

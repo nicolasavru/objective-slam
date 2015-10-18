@@ -25,8 +25,6 @@ class Model : public Scene {
     // private:
 public:
 
-
-
         // ppfCount[i] is the number of PPFs whose hash is hashKeys[i];
         thrust::device_vector<unsigned int> *ppfCount;
 
@@ -73,9 +71,20 @@ public:
         // however it uses linear indexing
         thrust::device_vector<float> *transformations;
 
+        thrust::device_vector<float4> *transformation_rots;
+        thrust::device_vector<float3> *transformation_trans;
+        thrust::device_vector<unsigned int> *vote_counts_out;
+
         thrust::device_vector<unsigned int> *accumulator;
         thrust::device_vector<unsigned int> *maxidx;
         thrust::device_vector<unsigned int> *maxval;
+
+        thrust::device_vector<unsigned int> *trans_hash;
+        thrust::device_vector<unsigned int> *key2transMap;
+        thrust::device_vector<unsigned int> *transCount;
+        thrust::device_vector<unsigned int> *firstTransIndex;
+
+        thrust::device_vector<unsigned int> *adjacent_trans_hash;
 
         void accumulateVotes();
 };

@@ -57,6 +57,17 @@ typename pcl::PointCloud<Point>::Ptr sequentialDownsample(typename pcl::PointClo
     return filtered_cloud;
 }
 
+template <typename Point>
+typename pcl::PointCloud<Point>::Ptr voxelGridDownsample(typename pcl::PointCloud<Point>::Ptr cloud,
+                                                         float leaf){
+    typename pcl::PointCloud<Point>::Ptr filtered_cloud(new pcl::PointCloud<Point>);
+    pcl::VoxelGrid<Point> sor;
+    sor.setInputCloud(cloud);
+    sor.setLeafSize(leaf, leaf, leaf);
+    sor.filter(*filtered_cloud);
+    return filtered_cloud;
+}
+
 
 // Align a rigid object to a scene with clutter and occlusions
 int main(int argc, char **argv){
@@ -99,12 +110,29 @@ int main(int argc, char **argv){
         return (1);
     }
 
+    // Downsample
+    pcl::console::print_info("Downsampling...\n");
+    int object_n = 2000;
+    int scene_n = 1000;
+    pcl::console::print_info("Object size before filtering: %u (%u x %u)\n",
+                             object->size(), object-> width, object->height);
+    object = sequentialDownsample<PointNT>(object, object_n);
+    // object = voxelGridDownsample<PointNT>(object, 0.03);
+    pcl::console::print_info("Object size after filtering: %u (%u x %u)\n",
+                             object->size(), object-> width, object->height);
+
+    pcl::console::print_info("Scene size before filtering: %u (%u x %u)\n",
+                             scene->size(), scene-> width, scene->height);
+    scene = sequentialDownsample<PointNT>(scene, scene_n);
+    // scene = voxelGridDownsample<PointNT>(scene, 0.075);
+    pcl::console::print_info("Scene size after filtering: %u (%u x %u)\n",
+                             scene->size(), scene-> width, scene->height);
 
     // // Estimate normals for object
     // pcl::console::print_highlight("Estimating object normals...\n");
     // // pcl::NormalEstimationOMP<PointNT, PointNT> nest_obj;
     // pcl::NormalEstimation<PointNT, PointNT> nest_obj;
-    // nest_obj.setRadiusSearch(0.01);
+    // nest_obj.setRadiusSearch(0.1);
     // // pcl::search::KdTree<PointNT>::Ptr tree (new pcl::search::KdTree<PointNT>);
     // // nest_obj.setSearchMethod (tree);
     // // nest_obj.setKSearch(15);
@@ -115,29 +143,12 @@ int main(int argc, char **argv){
     // pcl::console::print_highlight("Estimating scene normals...\n");
     // // pcl::NormalEstimationOMP<PointNT, PointNT> nest_scene;
     // pcl::NormalEstimation<PointNT, PointNT> nest_scene;
-    // nest_scene.setRadiusSearch(0.01);
+    // nest_scene.setRadiusSearch(0.3);
     // // pcl::search::KdTree<PointNT>::Ptr tree_scene (new pcl::search::KdTree<PointNT>);
     // // nest_obj.setSearchMethod (tree_scene);
     // // nest_scene.setKSearch(15);
     // nest_scene.setInputCloud(scene);
     // nest_scene.compute(*scene);
-
-
-    // Downsample
-    pcl::console::print_info("Downsampling...\n");
-    int object_n = 2000;
-    int scene_n = 1000;
-    pcl::console::print_info("Object size before filtering: %u (%u x %u)\n",
-                             object->size(), object-> width, object->height);
-    object = sequentialDownsample<PointNT>(object, object_n);
-    pcl::console::print_info("Object size after filtering: %u (%u x %u)\n",
-                             object->size(), object-> width, object->height);
-
-    pcl::console::print_info("Scene size before filtering: %u (%u x %u)\n",
-                             scene->size(), scene-> width, scene->height);
-    scene = sequentialDownsample<PointNT>(scene, scene_n);
-    pcl::console::print_info("Scene size after filtering: %u (%u x %u)\n",
-                             scene->size(), scene-> width, scene->height);
 
 
     // Convert point clouds to arrays of float3.

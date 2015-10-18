@@ -7,9 +7,16 @@
 
 // FNV-1a hash function
 // http://programmers.stackexchange.com/questions/49550/which-hashing-algorithm-is-best-for-uniqueness-and-speed
-__device__ unsigned int hash(void *f, int n){
+__device__ unsigned int high_32(unsigned long i){
+    return (unsigned int) (i >> 32);
+}
+
+__device__ unsigned int low_32(unsigned long i){
+    return (unsigned int) (i & (-1ul >> 32));
+}
+
+__device__ unsigned int hash(void *f, int n, unsigned int hash=2166136261){
     char *s = (char *) f;
-    unsigned int hash = 2166136261;
     while(n--){
         hash ^= *s++;
         hash *= 16777619;
@@ -45,6 +52,10 @@ __device__ __forceinline__ float dot(float4 v1, float4 v2){
 }
 
 __device__ __forceinline__ float norm(float3 v){
+    return sqrtf(dot(v, v));
+}
+
+__device__ __forceinline__ float norm(float4 v){
     return sqrtf(dot(v, v));
 }
 
@@ -87,6 +98,28 @@ __device__ __forceinline__ float4 compute_ppf(float3 p1, float3 n1, float3 p2, f
     f.w = acosf(dot(n1,n2) / (norm(n1)*norm(n2)));
 
     return f;
+}
+
+__device__ __forceinline__ float3 trans(float T[4][4]){
+    return make_float3(T[0][3], T[1][3], T[2][3]);
+}
+
+__device__ __forceinline__ float4 hrotmat2quat(float T[4][4]){
+    // https://en.wikipedia.org/wiki/Rotation_matrix#Quaternion
+    float t, r;
+    float4 q;
+    t = T[0][0] + T[1][1] + T[2][2];
+    r = sqrt(1+t);
+    q.x = 0.5*r;
+    q.y = copysignf(0.5*sqrtf(1+T[0][0]-T[1][1]-T[2][2]), T[2][1]-T[1][2]);
+    q.z = copysignf(0.5*sqrtf(1-T[0][0]+T[1][1]-T[2][2]), T[0][2]-T[2][0]);
+    q.w = copysignf(0.5*sqrtf(1-T[0][0]-T[1][1]+T[2][2]), T[1][0]-T[0][1]);
+    float n = sqrt(norm(q));
+    q.x /= n;
+    q.y /= n;
+    q.z /= n;
+    q.w /= n;
+    return q;
 }
 
 __device__ __forceinline__ void trans(float3 v, float T[4][4]){
@@ -612,6 +645,232 @@ __global__ void trans_calc_kernel(unsigned int *uniqueSceneRefPts,
                            s_roty, s_rotz, ((float *) transforms + idx*16));
 
         //grid stride
+        idx += blockDim.x * gridDim.x;
+    }
+}
+
+__global__ void trans_calc_kernel2(unsigned long *votes,
+                                   float3 *model_points, float3 *model_normals,
+                                   float3 *scene_points, float3 *scene_normals,
+                                   float *transforms, int count){
+    if(count <= 1) return;
+
+    int ind = threadIdx.x;
+    int idx = ind + blockIdx.x * blockDim.x;
+
+    unsigned int angle_idx, model_point_idx, scene_point_idx, modelanglecode;
+    unsigned long vote;
+
+    unsigned int low6 = ((unsigned int) -1) >> 26;
+    // unsigned long hi32 = ((unsigned long) -1) << 32;
+    // unsigned long model_point_mask = ((unsigned long) -1) ^ hi32 ^ low6;
+    float m_roty, m_rotz, s_roty, s_rotz;
+
+    while(idx < count){
+        vote = votes[idx];
+        scene_point_idx = high_32(vote);
+        modelanglecode = low_32(vote);
+        model_point_idx = (modelanglecode >> 6);
+        angle_idx = modelanglecode & low6;
+        if(scene_point_idx == 0 && model_point_idx == 0 && angle_idx == 0){
+            idx += blockDim.x * gridDim.x;
+            continue;
+        }
+
+        compute_rot_angles(model_normals[model_point_idx],
+                           scene_normals[scene_point_idx],
+                           &m_roty, &m_rotz, &s_roty, &s_rotz);
+
+        compute_transforms(angle_idx, model_points[model_point_idx],
+                           m_roty, m_rotz,
+                           scene_points[scene_point_idx],
+                           s_roty, s_rotz, ((float *) transforms + idx*16));
+
+        //grid stride
+        idx += blockDim.x * gridDim.x;
+    }
+}
+
+__global__ void mat2transquat_kernel(float *transformations,
+                                     float3 *transformation_trans,
+                                     float4 *transformation_rots,
+                                     int count){
+    if(count <= 1) return;
+
+    int ind = threadIdx.x;
+    int idx = ind + blockIdx.x * blockDim.x;
+
+    while(idx < count){
+        transformation_trans[idx] = trans((float (*)[4]) (transformations + idx*16));
+        transformation_rots[idx] = hrotmat2quat((float (*)[4]) (transformations + idx*16));
+        idx += blockDim.x * gridDim.x;
+    }
+}
+
+__global__ void trans2idx_kernel(float3 *translations,
+                                 unsigned int *trans_hash,
+                                 unsigned int *adjacent_trans_hash,
+                                 int count){
+    if(count <= 1) return;
+
+    int ind = threadIdx.x;
+    int idx = ind + blockIdx.x * blockDim.x;
+    int3 norm_disc_trans;
+    int3 adjacent_norm_disc_trans;
+
+    while(idx < count){
+        float3 disc_trans = discretize(translations[idx], D_DIST);
+        norm_disc_trans.x = (int) (disc_trans.x / D_DIST);
+        norm_disc_trans.y = (int) (disc_trans.y / D_DIST);
+        norm_disc_trans.z = (int) (disc_trans.z / D_DIST);
+        // Maybe replace hash with bitpacking an unsigned long.
+        trans_hash[idx] = hash(&norm_disc_trans, sizeof(int3));
+        for(int i = -1, c = 0; i < 2; i++){
+            for(int j = -1; j < 2; j++){
+                for(int k = -1; k < 2; k++, c++){
+                    if(i == j == k == 0){
+                        adjacent_trans_hash[27*idx+c] = 0;
+                        continue;
+                    }
+                    adjacent_norm_disc_trans.x = norm_disc_trans.x + i;
+                    adjacent_norm_disc_trans.y = norm_disc_trans.y + j;
+                    adjacent_norm_disc_trans.z = norm_disc_trans.z + k;
+                    adjacent_trans_hash[27*idx+c] = hash(&adjacent_norm_disc_trans, sizeof(int3));
+                }
+            }
+        }
+        idx += blockDim.x * gridDim.x;
+    }
+}
+
+// __global__ void rot_clustering_kernel(float3 *translations,
+//                                       float4 *quaternions,
+//                                       unsigned int *vote_counts,
+//                                       // float3 *translations_out,
+//                                       // float4 *quaternions_out,
+//                                       unsigned int *vote_counts_out,
+//                                       int count){
+//     if(count <= 1) return;
+
+//     int ind = threadIdx.x;
+//     int idx = ind + blockIdx.x * blockDim.x;
+//     int bound;
+
+//     while(idx < count) {
+
+//         __shared__ float3 Strans[BLOCK_SIZE/2];
+//         __shared__ float4 Squat[BLOCK_SIZE/2];
+//         __shared__ unsigned int Svotecounts[BLOCK_SIZE/2];
+
+//         float3 thisTrans = translations[idx];
+//         float4 thisQuat  = quaternions[idx];
+//         unsigned int thisVoteCountOut = vote_counts[idx];
+//         if(thisVoteCountOut < 10){
+//             idx += blockDim.x * gridDim.x;
+//             continue;
+//         }
+
+//         for(int i = 0; i < count; i+=BLOCK_SIZE/2){
+
+//             bound = MIN(count - i, BLOCK_SIZE/2);
+
+//             //read as a block into shared memory
+//             if (ind < bound){
+//                 Strans[ind] = translations[i+ind];
+//                 Squat[ind]  = quaternions[i+ind];
+//                 Svotecounts[ind] = vote_counts[i+ind];
+//             }
+//             __syncthreads();
+
+//             for(int j = 0; j < bound; j++) {
+//                 if((j + i - idx) == 0){
+//                     //no self-comparisons
+//                     continue;
+//                 };
+//                 if(Svotecounts[j] < 10){
+//                     continue;
+//                 }
+//                 // compute similarity between transformations
+//                 float normDiffTrans = norm(minus(thisTrans, Strans[j]));
+//                 float quatDiff      = 8*(1-dot(thisQuat,Squat[j]));
+//                 //Check for similarity
+//                 if ((normDiffTrans < TRANS_THRESH) && (quatDiff < ROT_THRESH))
+//                     {
+//                         // thisVoteCountOut += Svotecounts[j];
+//                         thisVoteCountOut = 1;
+//                         // vote_counts_out[idx] += Svotecounts[j];
+//                     }
+//             }
+//         }
+//         vote_counts_out[idx] = thisVoteCountOut;
+//         //grid stride
+//         idx += blockDim.x * gridDim.x;
+//     }
+// }
+
+__global__ void rot_clustering_kernel(float3 *translations,
+                                      float4 *quaternions,
+                                      unsigned int *vote_counts,
+                                      unsigned int *adjacent_trans_hash,
+                                      unsigned int *transIndices,
+                                      unsigned int *transKeys,  unsigned int *transCount,
+                                       unsigned int *firstTransIndex, unsigned int *key2transMap,
+                                      // float3 *translations_out,
+                                      // float4 *quaternions_out,
+                                      unsigned int *vote_counts_out,
+                                      int count){
+    if(count <= 1) return;
+
+    int ind = threadIdx.x;
+    int idx = ind + blockIdx.x * blockDim.x;
+    int bound;
+
+    while(idx < count) {
+        __shared__ float3 Strans[BLOCK_SIZE/2];
+        __shared__ float4 Squat[BLOCK_SIZE/2];
+        __shared__ unsigned int Svotecounts[BLOCK_SIZE/2];
+
+        float3 thisTrans = translations[idx];
+        float4 thisQuat  = quaternions[idx];
+        unsigned int thisVoteCountOut = vote_counts[idx];
+        for(int adjacent_block = 0; adjacent_block < 27; adjacent_block++){
+            // printf("27*idx: %u, %u, %d\n", 27*idx, idx, count);
+            unsigned int thisAdjacentHash = adjacent_trans_hash[27*idx+adjacent_block];
+            unsigned int thisAdjacentHashIndex = transIndices[27*idx+adjacent_block];
+            // printf("thisAdjacentHash[%u]: %u\n", 27*idx+adjacent_block, thisAdjacentHash);
+            if(thisAdjacentHash == 0 ||
+               thisAdjacentHash != transKeys[thisAdjacentHashIndex]
+               ){
+                // idx += blockDim.x * gridDim.x;
+                // printf("skipping vote_counts_idx[%u]\n", idx);
+                continue;
+            }
+            // printf("thisAdjacentHash[%u]: %u\n", 27*idx+adjacent_block, thisAdjacentHash);
+            unsigned int thisTransCount = transCount[thisAdjacentHashIndex];
+            // printf("transCount[%u]: %u\n", thisAdjacentHashIndex, thisTransCount);
+            unsigned int thisFirstTransIndex = firstTransIndex[thisAdjacentHashIndex];
+
+            for(int j = 0; j < thisTransCount; j++){
+                float normDiffTrans =
+                    norm(minus(thisTrans,
+                               translations[key2transMap[thisFirstTransIndex+j]]));
+                // TODO: square the threshold instead of sqrting here
+                float quatDiff =
+                    sqrt(fabsf(8*(1-dot(thisQuat,
+                                        quaternions[key2transMap[thisFirstTransIndex+j]]))));
+                // printf("starting on vote_counts_idx[%u], %f, %f\n", idx, normDiffTrans, quatDiff);
+                if ((normDiffTrans < TRANS_THRESH) && (quatDiff < ROT_THRESH))
+                    {
+                        // thisVoteCountOut += Svotecounts[j];
+                        // thisVoteCountOut = 1;
+                        // vote_counts_out[idx] += Svotecounts[j];
+                        vote_counts_out[idx] += vote_counts[key2transMap[thisFirstTransIndex+j]];
+                        // printf("vote_counts_idx[%u]: %u\n", idx, vote_counts_out[idx]);
+                    }
+            }
+        }
+
+        // grid stride
         idx += blockDim.x * gridDim.x;
     }
 }

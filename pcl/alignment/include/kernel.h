@@ -16,6 +16,8 @@
 #define N_ANGLE 30
 #define D_ANGLE0 ((2.0f*float(CUDART_PI_F))/float(N_ANGLE))  //this one is for discretizing the feature in ppf_kernel
 #define D_DIST 0.035317969013662f  // generated based on MATLAB model_description.m:12, specifically for chair model
+#define TRANS_THRESH (0.5*D_DIST)
+#define ROT_THRESH (2*D_ANGLE0)
 #define SCORE_THRESHOLD 0
 
 __global__ void ppf_kernel(float3 *points, float3 *norms, float4 *out, int count);
@@ -54,5 +56,32 @@ __global__ void trans_calc_kernel(unsigned int *uniqueSceneRefPts,
                                   float3 *model_points, float3 *model_normals,
                                   float3 *scene_points, float3 *scene_normals,
                                   float *transforms, int count);
+
+__global__ void trans_calc_kernel2(unsigned long *votes,
+                                   float3 *model_points, float3 *model_normals,
+                                   float3 *scene_points, float3 *scene_normals,
+                                   float *transforms, int count);
+
+__global__ void mat2transquat_kernel(float *transformations,
+                                     float3 *transformation_trans,
+                                     float4 *transformation_rots,
+                                     int count);
+
+__global__ void rot_clustering_kernel(float3 *translations,
+                                      float4 *quaternions,
+                                      unsigned int *vote_counts,
+                                      unsigned int *adjacent_trans_hash,
+                                      unsigned int *transIndices,
+                                      unsigned int *transKeys,  unsigned int *transCount,
+                                      unsigned int *firstTransIndex, unsigned int *key2transMap,
+                                      // float3 *translations_out,
+                                      // float4 *quaternions_out,
+                                      unsigned int *vote_counts_out,
+                                      int count);
+
+__global__ void trans2idx_kernel(float3 *translations,
+                                 unsigned int *trans_hash,
+                                 unsigned int *adjacent_trans_hash,
+                                 int count);
 
 #endif /* __KERNEL_H */
