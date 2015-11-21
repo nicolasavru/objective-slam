@@ -209,19 +209,11 @@ Eigen::Matrix4f ply_load_main(float3 *scenePoints, float3 *sceneNormals, int sce
         new thrust::host_vector<unsigned int>(*model->vote_counts_out);
 
     // write out transformations
-    int m = 0;
-    int m_idx = 0;
-    for (int i=1; i<maxval->size(); i++){
-       if((*maxval)[i] > m){
-           m_idx = i;
-           m = (*maxval)[i];
-       }
-
-       if((*maxval)[i] < 2){
-           continue;
-       }
+    // (*maxval)[0] is all the unallocated votes
+    float threshold = 0.8 * (*maxval)[1];
+    for (int i=1; (*maxval)[i] > threshold; i++){
        cout << "num_votes: " << (*maxval)[i] << endl;
-       cout << "transforms(:,:," << i+1 << ") = [";
+       cout << "transforms(:,:," << i << ") = [";
        for (int j=0; j<4; j++){
            for (int k=0; k<4; k++){
                cout << (*transformations)[i*16+j*4+k] << " ";
@@ -235,7 +227,7 @@ Eigen::Matrix4f ply_load_main(float3 *scenePoints, float3 *sceneNormals, int sce
     Eigen::Matrix4f T;
     for (int j=0; j<4; j++){
         for (int k=0; k<4; k++){
-            T(j,k) = (*transformations)[m_idx*16+j*4+k];
+            T(j,k) = (*transformations)[16+j*4+k];
         }
     }
 

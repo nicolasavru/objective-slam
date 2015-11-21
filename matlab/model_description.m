@@ -2,6 +2,7 @@ function [ mapObj, d_dist, d_angle ] = model_description( model_points, model_no
 %model_description 
 %   Detailed explanation goes here
 
+norms = sqrt(sum(abs(model_points).^2,2));
 min_coords = min(model_points);
 max_coords = max(model_points);
 center = mean([min_coords; max_coords]);

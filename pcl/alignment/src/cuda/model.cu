@@ -6,6 +6,7 @@
 #include <thrust/iterator/constant_iterator.h>
 #include <thrust/scan.h>
 #include <thrust/sequence.h>
+#include <thrust/sort.h>
 #include <thrust/device_vector.h>
 #include <thrust/binary_search.h>
 
@@ -30,6 +31,9 @@ struct low_32_bits : public thrust::unary_function<unsigned long,unsigned int>{
     }
 };
 
+struct float16 {
+    float f[16];
+};
 
 Model::Model(thrust::host_vector<float3> *points, thrust::host_vector<float3> *normals, int n){
     this->initPPFs(points, normals, n);
@@ -214,6 +218,11 @@ void Model::ppf_lookup(Scene *scene){
          RAW_PTR(this->transCount), RAW_PTR(this->firstTransIndex),
          RAW_PTR(this->key2transMap), RAW_PTR(this->vote_counts_out),
          this->votes->size());
+
+    thrust::sort_by_key(this->vote_counts_out->begin(),
+                        this->vote_counts_out->end(),
+                        thrust::device_ptr<struct float16>((struct float16 *) RAW_PTR(this->transformations)),
+                        thrust::greater<unsigned int>());
 
 
     // thrust::device_vector<unsigned int> *uniqueSceneRefPts =

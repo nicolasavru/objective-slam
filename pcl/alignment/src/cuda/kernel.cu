@@ -416,7 +416,12 @@ __global__ void ppf_kernel(float3 *points, float3 *norms, float4 *out, int count
                     continue;
                 };
                 // MATLAB model_description.m:37
-                out[idx*count + j + i] = compute_ppf(thisPoint, thisNorm, Spoints[j], Snorms[j]);
+                float4 ppf = compute_ppf(thisPoint, thisNorm, Spoints[j], Snorms[j]);
+                // if(ppf.w < D_ANGLE0){
+                //     out[idx*count + j + i].x = CUDART_NAN_F;
+                //     continue;
+                // }
+                out[idx*count + j + i] = ppf;
                 // MATLAB model_description.m:42
                 out[idx*count + j + i] = disc_feature(out[idx*count + j + i], D_DIST, D_ANGLE0);
             }
@@ -434,7 +439,7 @@ __global__ void ppf_hash_kernel(float4 *ppfs, unsigned int *codes, int count){
     int idx = ind + blockIdx.x * blockDim.x;
 
     while(idx < count){
-        if(ppfs[idx].x == CUDART_NAN_F){
+        if(isnan(ppfs[idx].x)){
             codes[idx] = 0;
         }
         else{

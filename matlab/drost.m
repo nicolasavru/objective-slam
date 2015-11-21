@@ -23,8 +23,8 @@ disp('Chair Model Loaded and Normals Computed');
 model_N = 2500;
 scene_N = 1000;
 
-%[scene1_tri,scene1_pts] = ply_read('../ply/scene1_trimmed2.ply','tri');
-[scene1_tri,scene1_pts] = ply_read('../ply/chair1.ply','tri');
+[scene1_tri,scene1_pts] = ply_read('../ply/scene1_trimmed2.ply','tri');
+%[scene1_tri,scene1_pts] = ply_read('../ply/chair1.ply','tri');
 %scene1_pts = [scene1.vertex.x, scene1.vertex.y, scene1.vertex.z].';
 %scene1_vn = [scene1.vertex.nx, scene1.vertex.ny, scene1.vertex.nz];
 
@@ -76,8 +76,10 @@ disp('Computed chair map');
 
 % transform_Tsg
 
-for ii = 1:size(transform_Tmg, 3)
-    transform = invht(transform_Tsg(:,:,ii))*transform_alpha(:,:,ii)*transform_Tmg(:,:,ii);
+%for ii = 1:size(transform_Tmg, 3)
+for ii = 1:size(transforms, 3)
+    %transform = invht(transform_Tsg(:,:,ii))*transform_alpha(:,:,ii)*transform_Tmg(:,:,ii);
+    transform = transforms(:,:,ii);
 
     if det(transform) > 0
         ii
@@ -95,7 +97,7 @@ for ii = 1:size(transform_Tmg, 3)
                 'EdgeColor', 'green');
         trisurf(scene1_tri,scene1_pts(:,1),scene1_pts(:,2),scene1_pts(:,3), ...
                 'EdgeColor', 'none', 'FaceAlpha', 0.8);
-        h = trisurf(chair1_tri,chair_new_pts(:,1),chair_new_pts(:,2),chair_new_pts(:,3));
+        h = trisurf(chair1_tri,chair_new_pts(:,1),chair_new_pts(:,2),chair_new_pts(:,3), 'EdgeColor', 'yellow');
         cameratoolbar;
         axis equal;
         xlabel('X Axis');
