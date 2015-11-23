@@ -72,7 +72,7 @@ __device__ float quant_downf(float x, float y){
     return x - fmodf(x, y);
 }
 
-__device__ __forceinline__ float4 disc_feature(float4 f, float d_dist, float d_angle){
+__device__ float4 disc_feature(float4 f, float d_dist, float d_angle){
     f.x = quant_downf(f.x, d_dist);
     f.y = quant_downf(f.y, d_angle);
     f.z = quant_downf(f.z, d_angle);
@@ -80,14 +80,14 @@ __device__ __forceinline__ float4 disc_feature(float4 f, float d_dist, float d_a
     return f;
 }
 
-__device__ __forceinline__ float3 discretize(float3 f, float d_dist){
+__device__ float3 discretize(float3 f, float d_dist){
     f.x = quant_downf(f.x, d_dist);
     f.y = quant_downf(f.y, d_dist);
     f.z = quant_downf(f.z, d_dist);
     return f;
 }
 
-__device__ __forceinline__ float4 compute_ppf(float3 p1, float3 n1, float3 p2, float3 n2){
+__device__ float4 compute_ppf(float3 p1, float3 n1, float3 p2, float3 n2){
     float3 d;
     d.x = p2.x - p1.x;
     d.y = p2.y - p1.y;
@@ -102,11 +102,11 @@ __device__ __forceinline__ float4 compute_ppf(float3 p1, float3 n1, float3 p2, f
     return f;
 }
 
-__device__ __forceinline__ float3 trans(float T[4][4]){
+__device__ float3 trans(float T[4][4]){
     return make_float3(T[0][3], T[1][3], T[2][3]);
 }
 
-__device__ __forceinline__ float4 hrotmat2quat(float T[4][4]){
+__device__ float4 hrotmat2quat(float T[4][4]){
     // https://en.wikipedia.org/wiki/Rotation_matrix#Quaternion
     float t, r;
     float4 q;
@@ -124,7 +124,7 @@ __device__ __forceinline__ float4 hrotmat2quat(float T[4][4]){
     return q;
 }
 
-__device__ __forceinline__ void trans(float3 v, float T[4][4]){
+__device__ void trans(float3 v, float T[4][4]){
     zeroMat4(T);
     T[0][0] = 1;
     T[1][1] = 1;
@@ -135,7 +135,7 @@ __device__ __forceinline__ void trans(float3 v, float T[4][4]){
     T[2][3] = v.z;
 }
 
-__device__ __forceinline__ void rotx(float theta, float T[4][4]){
+__device__ void rotx(float theta, float T[4][4]){
     zeroMat4(T);
     T[0][0] = 1;
     T[1][1] = cosf(theta);
@@ -145,7 +145,7 @@ __device__ __forceinline__ void rotx(float theta, float T[4][4]){
     T[3][3] = 1;
 }
 
-__device__ __forceinline__ void roty(float theta, float T[4][4]){
+__device__ void roty(float theta, float T[4][4]){
     zeroMat4(T);
     T[0][0] = cosf(theta);
     T[0][2] = sinf(theta);
@@ -155,7 +155,7 @@ __device__ __forceinline__ void roty(float theta, float T[4][4]){
     T[3][3] = 1;
 }
 
-__device__ __forceinline__ void rotz(float theta, float T[4][4]){
+__device__ void rotz(float theta, float T[4][4]){
     zeroMat4(T);
     T[0][0] = cosf(theta);
     T[1][0] = sinf(theta);
@@ -165,7 +165,7 @@ __device__ __forceinline__ void rotz(float theta, float T[4][4]){
     T[3][3] = 1;
 }
 
-__device__ __forceinline__ void mat4f_mul(const float A[4][4],
+__device__ void mat4f_mul(const float A[4][4],
                           const float B[4][4],
                           float C[4][4]){
     zeroMat4(C);
@@ -179,7 +179,7 @@ __device__ __forceinline__ void mat4f_mul(const float A[4][4],
     }
 }
 
-__device__ __forceinline__ float3 mat3f_vmul(const float A[3][3], const float3 b){
+__device__ float3 mat3f_vmul(const float A[3][3], const float3 b){
     float3 *Af3 = (float3 *) A;
     float3 c;
     c.x = dot(Af3[0], b);
@@ -188,7 +188,7 @@ __device__ __forceinline__ float3 mat3f_vmul(const float A[3][3], const float3 b
     return c;
 }
 
-__device__ __forceinline__ float4 mat4f_vmul(const float A[4][4], const float4 b){
+__device__ float4 mat4f_vmul(const float A[4][4], const float4 b){
     float4 *Af4 = (float4 *) A;
     float4 c;
     c.x = dot(Af4[0], b);
@@ -198,17 +198,17 @@ __device__ __forceinline__ float4 mat4f_vmul(const float A[4][4], const float4 b
     return c;
 }
 
-__device__ __forceinline__ float4 homogenize(float3 v){
+__device__ float4 homogenize(float3 v){
     float4 w = {v.x, v.y, v.z, 1};
     return w;
 }
 
-__device__ __forceinline__ float3 dehomogenize(float4 v){
+__device__ float3 dehomogenize(float4 v){
     float3 w = {v.x, v.y, v.z};
     return w;
 }
 
-__device__ __forceinline__ void invht(float T[4][4], float T_inv[4][4]){
+__device__ void invht(float T[4][4], float T_inv[4][4]){
     // T = [R t;0 1]; inv(T) = [R' -R'*t;0 1]; R*R' = I
     // R'
     T_inv[0][0] = T[0][0];
