@@ -14,7 +14,12 @@ find_package(Eigen REQUIRED)
 #cuda info:
 # http://stackoverflow.com/questions/13073717/building-cuda-object-files-using-cmake
 # https://devtalk.nvidia.com/default/topic/487573/cuda-programming-and-performance/linker-error-usr-bin-ld-cannot-find-lcudart/post/3497498/#3497498
-find_package(CUDA)
+find_package(CUDA 5.0 REQUIRED)
+
+set(CUDA_SEPARABLE_COMPILATION ON)
+set(BUILD_SHARED_LIBS OFF)
+# set(CUDA_VERBOSE_BUILD ON)
+
 
 FILE(GLOB srcs src/*.cpp)
 FILE(GLOB cuda src/cuda/*.cu)
@@ -42,9 +47,11 @@ foreach(d ${vtk_flags})
     remove_definitions(-D${d})
 endforeach()
 
+# list(APPEND CUDA_LIBRARIES -lcudadevrt)
+set(CUDA_HOST_COMPILER g++-4.9)
 
 if (UNIX OR APPLE)
-    set (CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS}  "-Xcompiler;-fPIC;-ccbin g++-4.9")
+    set (CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS};-Xcompiler;-fPIC;--std=c++11)
 endif()
 
 if(NOT UNIX OR APPLE)
@@ -52,14 +59,22 @@ if(NOT UNIX OR APPLE)
 endif()
 
 # set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS} "--ftz=true --prec-div=false --prec-sqrt=false -arch=sm_35 -DTHRUST_DEBUG -G -g")
-set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS} "--ftz=true --prec-div=false --prec-sqrt=false -arch=sm_35 -DTHRUST_DEBUG")
+set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS};--ftz=true;--prec-div=false;--prec-sqrt=false;-arch=sm_35;-DTHRUST_DEBUG; -lcudadevrt)
 # set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS} "--ftz=true --prec-div=false --prec-sqrt=false -arch=sm_35")
-CUDA_COMPILE(cuda_objs ${cuda})
+# CUDA_COMPILE(cuda_objs ${cuda})
+CUDA_ADD_LIBRARY(alignment_lib ${cuda})
 
-if (WIN32)
-    add_executable (alignment src/alignment.cpp ${cuda})
-else()
-    add_executable (alignment src/alignment.cpp ${cuda_objs})
-endif()
 
-target_link_libraries (alignment ${PCL_LIBRARIES} ${CUDA_LIBRARIES})
+
+
+# if (WIN32)
+#     add_executable (alignment src/alignment.cpp ${cuda})
+# else()
+#     add_executable (alignment src/alignment.cpp ${cuda_objs})
+# endif()
+
+# CUDA_ADD_EXECUTABLE (alignment src/alignment.cpp)
+
+add_executable (alignment src/alignment.cpp)
+
+target_link_libraries (alignment alignment_lib ${PCL_LIBRARIES} ${CUDA_LIBRARIES} /opt/cuda/lib64/libcudadevrt.a )

@@ -18,57 +18,6 @@
 
 #include "debug.h"
 
-std::ostream& operator<<(std::ostream& out, const float3& obj){
-    out << obj.x << ", " << obj.y << ", " << obj.z;
-    return out;
-}
-
-std::ostream& operator<<(std::ostream& out, const float4& obj){
-    out << obj.x << ", " << obj.y << ", " << obj.z << ", " << obj.w;
-    return out;
-}
-
-// Vectors can't be compared, you say? Don't worry about it.
-__device__ bool operator<(const float4 a, const float4 b){
-    // compare 4 bytes at a time instead of 2
-    ulong2 ul2a = *((ulong2 *) &a);
-    ulong2 ul2b = *((ulong2 *) &b);
-
-    if((ul2a.x < ul2b.x) ||
-       ((ul2a.x == ul2b.x) && (ul2b.y < ul2b.y))){
-        return true;
-    }
-    return false;
-}
-
-__device__ bool operator<(const float3 a, const float3 b){
-    // compare 4 bytes at a time instead of 2
-    ulong2 ul2a = *((ulong2 *) &a);
-    ulong2 ul2b = *((ulong2 *) &b);
-
-    if((ul2a.x < ul2b.x) ||
-       ((ul2a.x == ul2b.x) && (a.z < b.z))){
-        return true;
-    }
-    return false;
-}
-
-
-__device__ bool operator==(const float3 a, const float3 b){
-    // compare 4 bytes at a time instead of 2
-    // Is allocating two variables worth saving a comparison and a bitwise and?
-    ulong2 ul2a = *((ulong2 *) &a);
-    ulong2 ul2b = *((ulong2 *) &b);
-
-    if((ul2a.x == ul2b.x) && (a.z == b.z)){
-        return true;
-    }
-    return false;
-}
-
-__device__ bool operator!=(const float3 a, const float3 b){
-    return !(a == b);
-}
 
 template <typename Vector1, typename Vector2, typename Vector3>
 void histogram(const Vector1& input,

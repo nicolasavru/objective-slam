@@ -13,6 +13,7 @@
 #include "model.h"
 #include "impl/ppf_utils.hpp"
 #include "impl/util.hpp"
+#include "impl/parallel_hash_array.hpp"
 #include "kernel.h"
 #include "book.h"
 
@@ -37,66 +38,13 @@ struct float16 {
 
 Model::Model(thrust::host_vector<float3> *points, thrust::host_vector<float3> *normals, int n){
     this->initPPFs(points, normals, n);
-
-    // SLAM++ Algorithm 1 lines 1-5
-    // key2ppfMap: indices into modelPPFs
-    this->key2ppfMap = new thrust::device_vector<unsigned int>(this->modelPPFs->size());
-    thrust::sequence(key2ppfMap->begin(), key2ppfMap->end());
-
-    // nonunique_hashkeys: array of hashKeys
-    thrust::device_vector<unsigned int> *nonunique_hashkeys =
-        new thrust::device_vector<unsigned int>(this->modelPPFs->size());
-
-    // for each ppf, compute a 32-bit hash
-    int blocks = std::min(((int)(this->modelPPFs->size()) + BLOCK_SIZE - 1) / BLOCK_SIZE, MAX_NBLOCKS);
-    ppf_hash_kernel<<<blocks,BLOCK_SIZE>>>(RAW_PTR(this->modelPPFs),
-                                           RAW_PTR(nonunique_hashkeys),
-                                           this->modelPPFs->size());
-
-    // SLAM++ Algorithm 1 line 6
-    // Instead of concatenating the hash and the index and sorting the
-    // 64-bit values, we're doing the equivalent operation of sorting
-    // the indices using the hashkeys as the sort key.
-    thrust::sort_by_key(nonunique_hashkeys->begin(), nonunique_hashkeys->end(), key2ppfMap->begin());
-
-    // key2ppfMap is now sorted such that the indices of identical
-    // PPFs are adjacent. We can now count the number of occurances of
-    // each unique PPF by taking a histogram of the hash keys. Sorting
-    // the hash keys allows the histogram to be computed efficiently
-    // using a reduce_by_key.
-
-    this->hashKeys = new thrust::device_vector<unsigned int>();
-    this->ppfCount = new thrust::device_vector<unsigned int>();
-    histogram_destructive(*nonunique_hashkeys, *(this->hashKeys), *(this->ppfCount));
-    delete nonunique_hashkeys;
-
-    // SLAM++ Algorithm 1 line 16
-    // Find the indices in key2ppfMap of the beginning of each block of identical PPFs.
-    this->firstPPFIndex = new thrust::device_vector<unsigned int>(this->hashKeys->size());
-    thrust::exclusive_scan(this->ppfCount->begin(),
-                           this->ppfCount->end(),
-                           this->firstPPFIndex->begin());
-    /* DEBUG */
-    fprintf(stderr, "numkeys: %u\n", this->hashKeys->size());
-    /* DEBUG */
-
-    this->votes = NULL;
-    this->voteCodes = NULL;
-    this->voteCounts = NULL;
-    this->firstVecIndex = NULL;
+    this->search_array = ParallelHashArray<float4>(*(this->modelPPFs));
 }
 
-// TODO: Deallocate memory for things not here yet
 Model::~Model(){
-    delete this->ppfCount;
-    delete this->firstPPFIndex;
-    delete this->key2ppfMap;
-    if (this->votes != NULL) delete this->votes;
-    if (this->voteCodes != NULL) delete this->voteCodes;
-    if (this->voteCounts != NULL) delete this->voteCounts;
+    // TODO
 }
 
-// TODO: finish
 void Model::ppf_lookup(Scene *scene){
 
     #ifdef DEBUG
@@ -106,15 +54,8 @@ void Model::ppf_lookup(Scene *scene){
         HANDLE_ERROR(cudaEventRecord(start, 0));
     #endif
 
-    // find possible starting indices of blocks matching Model hashKeys
-    thrust::device_vector<unsigned int> *sceneIndices =
-        new thrust::device_vector<unsigned int>(scene->getModelPPFs()->size());
-    thrust::lower_bound(this->hashKeys->begin(),
-                        this->hashKeys->end(),
-                        scene->getHashKeys()->begin(),
-                        scene->getHashKeys()->end(),
-                        sceneIndices->begin());
-
+    thrust::device_vector<std::size_t> *sceneIndices =
+        this->search_array.GetIndices(*(scene->getHashKeys()));
     // Steps 1-3
     // launch voting kernel instance for each scene reference point
     unsigned int lastIndex, lastCount;
@@ -124,27 +65,15 @@ void Model::ppf_lookup(Scene *scene){
     int blocks = std::min(((int)(scene->getHashKeys()->size()) + BLOCK_SIZE - 1) / BLOCK_SIZE, MAX_NBLOCKS);
     ppf_vote_kernel<<<blocks,BLOCK_SIZE>>>
         (RAW_PTR(scene->getHashKeys()), RAW_PTR(sceneIndices),
-         RAW_PTR(this->hashKeys), RAW_PTR(this->ppfCount),
-         RAW_PTR(this->firstPPFIndex), RAW_PTR(this->key2ppfMap),
+         RAW_PTR(this->search_array.GetHashkeys()), RAW_PTR(this->search_array.GetCounts()),
+         RAW_PTR(this->search_array.GetFirstHashkeyIndices()),
+         RAW_PTR(this->search_array.GetHashkeyToDataMap()),
          RAW_PTR(this->modelPoints), RAW_PTR(this->modelNormals),
          this->n, RAW_PTR(scene->getModelPoints()),
          RAW_PTR(scene->getModelNormals()), scene->numPoints(),
          RAW_PTR(votes_old),
          scene->getHashKeys()->size());
 
-#ifdef DEBUG
-    {
-        using namespace std;
-//        cout << "votes[0] = " << (*this->votes)[0] << endl;
-//        thrust::host_vector<float3> *hah = new thrust::host_vector<float3>(*vecs_old);
-//        cout << "vecs_old" << endl;
-//        for(int i = 0; i < vecs_old->size(); i++){
-//            if((*hah)[i].y > 0){
-//                cout << i << ", " << (*hah)[i] << endl;
-//            }
-//        }
-    }
-#endif
     thrust::sort(votes_old->begin(), votes_old->end());
     this->votes = new thrust::device_vector<unsigned long>();
     this->voteCounts = new thrust::device_vector<unsigned int>();
@@ -247,77 +176,6 @@ void Model::ppf_lookup(Scene *scene){
     //      thrust::maximum<thrust::tuple<unsigned int, unsigned int> >());
 
 
-
-
-    // // populates voteCodes and voteCounts, sorts votes
-    // this->accumulateVotes();
-
-    // this->vec2VoteMap = new thrust::device_vector<unsigned int>(vecs_old->size());
-    // thrust::sequence(vec2VoteMap->begin(), vec2VoteMap->end());
-
-    // thrust::sort_by_key(vecs_old->begin(), vecs_old->end(), vec2VoteMap->begin());
-
-    // // Step 4
-
-    // // accumulator is an n*n_angle matrix where the ith row
-    // // corresponds to the translation vector vecs[i] and the jth
-    // // column corresponds to the jth angle bin. accumulator[i*n_angle + j]
-    // // is the number of votes that correspond to that translation vector
-    // // and angle.
-    // //
-    // // We need to do linear indexing since using 1d array to model 2d
-    // // array. A device_vector is a host-side wrapper for device
-    // // memory, so we can't create a device_vector<device_vector>. We
-    // // could create a vector of device_vectors on the host, but then
-    // // backing memory would be non-contiguous (only vector-wise
-    // // continuous).
-
-    // unsigned int num_bins = thrust::inner_product(vecs_old->begin(), vecs_old->end() - 1,
-    //                                               vecs_old->begin() + 1,
-    //                                               (unsigned int) 1,
-    //                                               thrust::plus<unsigned int>(),
-    //                                               thrust::not_equal_to<float3>());
-
-    // // allocated by histogram_desctructive?
-    // this->vecs = new thrust::device_vector<float3>(num_bins);
-    // this->vecCounts = new thrust::device_vector<unsigned int>(num_bins);
-
-    // histogram_destructive(*vecs_old, *(this->vecs), *(this->vecCounts));
-    // delete vecs_old;
-
-    // // create list of beginning indices of blocks of ppfs having equal hashes
-    // this->firstVecIndex = new thrust::device_vector<unsigned int>(this->vecs->size());
-
-    // thrust::exclusive_scan(this->vecCounts->begin(),
-    //                        this->vecCounts->end(),
-    //                        this->firstVecIndex->begin());
-
-    // Step 5
-    // Can almost represent this (and Step 4) as a reduction or transformation, but not quite.
-    // this->accumulator = new thrust::device_vector<unsigned int>(truncVotes->size()*N_ANGLE, 0);
-    // std::cout << "votes_size:" << this->votes->size() << std::endl;
-
-    // blocks = std::min(((int)(this->votes->size()) + BLOCK_SIZE - 1) / BLOCK_SIZE, MAX_NBLOCKS);
-    // ppf_reduce_rows_kernel<<<blocks,BLOCK_SIZE>>>(RAW_PTR(this->votes),
-    //                                               RAW_PTR(this->voteCounts),
-    //                                               RAW_PTR(this->firstVoteIndex),
-    //                                               N_ANGLE,
-    //                                               RAW_PTR(accumulator),
-    //                                               this->votes->size());
-
-    // // Steps 6, 7
-    // this->maxidx = new thrust::device_vector<unsigned int>(this->votes->size());
-    // rowwise_max(*accumulator, this->votes->size(), N_ANGLE, *maxidx);
-
-    // thrust::device_vector<unsigned int> *scores =
-    //     new thrust::device_vector<unsigned int>(this->votes->size());
-
-    // blocks = std::min(((int)(this->votes->size()) + BLOCK_SIZE - 1) / BLOCK_SIZE, MAX_NBLOCKS);
-    // ppf_score_kernel<<<blocks,BLOCK_SIZE>>>(RAW_PTR(accumulator),
-    //                                         RAW_PTR(maxidx),
-    //                                         N_ANGLE, SCORE_THRESHOLD,
-    //                                         RAW_PTR(scores),
-    //                                         this->votes->size());
 
     // Step 8, 9
     // call trans_calc_kernel

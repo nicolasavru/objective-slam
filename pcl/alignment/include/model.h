@@ -7,6 +7,7 @@
 #include <thrust/device_vector.h>
 #include <thrust/host_vector.h>
 
+#include "impl/parallel_hash_array.hpp"
 #include "scene.h"
 #include "debug.h"
 
@@ -85,6 +86,8 @@ public:
         thrust::device_vector<unsigned int> *firstTransIndex;
 
         thrust::device_vector<unsigned int> *adjacent_trans_hash;
+
+        ParallelHashArray<float4> search_array;
 
         void accumulateVotes();
 };

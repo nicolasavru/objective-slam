@@ -28,7 +28,7 @@ Scene::~Scene(){
     delete this->modelPoints;
     delete this->modelNormals;
     delete this->modelPPFs;
-    delete this->hashKeys;
+    // delete this->hashKeys;
 }
 
 void Scene::initPPFs(thrust::host_vector<float3> *points, thrust::host_vector<float3> *normals, int n){

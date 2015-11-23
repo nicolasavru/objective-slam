@@ -1,6 +1,7 @@
 #ifndef __KERNEL_H
 #define __KERNEL_H
 
+#include <cstdlib>
 #include <cuda.h>
 #include <cuda_runtime.h>                // Stops underlining of __global__
 #include <device_launch_parameters.h>    // Stops underlining of threadIdx etc.
@@ -32,9 +33,9 @@ __global__ void vec_decode_kernel(float4 *vecs, unsigned int *key2VecMap,
 
 __global__ void ppf_hash_kernel(float4 *ppfs, unsigned int *codes, int count);
 
-__global__ void ppf_vote_kernel(unsigned int *sceneKeys, unsigned int *sceneIndices,
-                                unsigned int *hashKeys, unsigned int *ppfCount,
-                                unsigned int *firstPPFIndex, unsigned int *key2ppfMap,
+__global__ void ppf_vote_kernel(unsigned int *sceneKeys, std::size_t *sceneIndices,
+                                unsigned int *hashKeys, std::size_t *ppfCount,
+                                std::size_t *firstPPFIndex, std::size_t *key2ppfMap,
                                 float3 *modelPoints, float3 *modelNormals, int modelSize,
                                 float3 *scenePoints, float3 *sceneNormals, int sceneSize,
                                 unsigned long *votes, int count);

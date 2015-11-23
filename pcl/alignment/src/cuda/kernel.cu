@@ -1,9 +1,11 @@
+#include <cstdlib>
 #include <string.h>
 #include <cuda.h>
 #include <cuda_runtime.h>                // Stops underlining of __global__
 #include <device_launch_parameters.h>    // Stops underlining of threadIdx etc.
 #include <stdio.h>
 #include "kernel.h"
+#include "vector_ops.h"
 
 // FNV-1a hash function
 // http://programmers.stackexchange.com/questions/49550/which-hashing-algorithm-is-best-for-uniqueness-and-speed
@@ -43,30 +45,30 @@ __device__ __forceinline__ void zeroMat4(float T[4][4]){
     T[3][3] = 0;
 }
 
-__device__ __forceinline__ float dot(float3 v1, float3 v2){
+__device__ float dot(float3 v1, float3 v2){
     return v1.x*v2.x + v1.y*v2.y + v1.z*v2.z;
 }
 
-__device__ __forceinline__ float dot(float4 v1, float4 v2){
+__device__ float dot(float4 v1, float4 v2){
     return v1.x*v2.x + v1.y*v2.y + v1.z*v2.z + v1.w*v2.w;
 }
 
-__device__ __forceinline__ float norm(float3 v){
+__device__ float norm(float3 v){
     return sqrtf(dot(v, v));
 }
 
-__device__ __forceinline__ float norm(float4 v){
+__device__ float norm(float4 v){
     return sqrtf(dot(v, v));
 }
 
-__device__ __forceinline__  float3 cross(float3 u, float3 v){
+__device__  float3 cross(float3 u, float3 v){
     float3 w = {u.y*v.z - u.z*v.y,
                 u.z*v.x - u.x*v.z,
                 u.x*v.y - u.y*v.z};
     return w;
 }
 
-__device__ __forceinline__ float quant_downf(float x, float y){
+__device__ float quant_downf(float x, float y){
     return x - fmodf(x, y);
 }
 
@@ -206,36 +208,6 @@ __device__ __forceinline__ float3 dehomogenize(float4 v){
     return w;
 }
 
-__device__ __forceinline__ float3 times(float a, float3 v){
-    float3 w = {a*v.x, a*v.y, a*v.z};
-    return w;
-}
-
-__device__ __forceinline__ float4 times(float a, float4 v){
-    float4 w = {a*v.x, a*v.y, a*v.z, a*v.z};
-    return w;
-}
-
-__device__ __forceinline__ float3 plus(float3 u, float3 v){
-    float3 w = {u.x+v.x, u.y+v.y, u.z+v.z};
-    return w;
-}
-
-__device__ __forceinline__ float4 plus(float4 u, float4 v){
-    float4 w = {u.x+v.x, u.y+v.y, u.z+v.z, u.w+v.w};
-    return w;
-}
-
-__device__ __forceinline__ float3 minus(float3 u, float3 v){
-    float3 w = {u.x-v.x, u.y-v.y, u.z-v.z};
-    return w;
-}
-
-__device__ __forceinline__ float4 minus(float4 u, float4 v){
-    float4 w = {u.x-v.x, u.y-v.y, u.z-v.z, u.w-v.w};
-    return w;
-}
-
 __device__ __forceinline__ void invht(float T[4][4], float T_inv[4][4]){
     // T = [R t;0 1]; inv(T) = [R' -R'*t;0 1]; R*R' = I
     // R'
@@ -292,7 +264,7 @@ __device__ void trans_model_scene(float3 m_r, float3 n_r_m, float3 m_i,
     float4 n_tmp;
 
     // m_r = discretize(m_r, d_dist);
-    m_r = times(-1, m_r);
+    m_r = -1*m_r;
 
     trans(m_r, transm);
     roty(atan2f(n_r_m.z, n_r_m.x), rot_y);
@@ -302,7 +274,7 @@ __device__ void trans_model_scene(float3 m_r, float3 n_r_m, float3 m_i,
     mat4f_mul(rot_z, rot_y, T_tmp);     //POTENTIALLY SLOW
     mat4f_mul(T_tmp, transm, T_m_g);    //POTENTIALLY SLOW
 
-    s_r = times(-1, s_r);
+    s_r = -1*s_r;
     trans(s_r, transm);
     roty(atan2f(n_r_s.z, n_r_s.x), rot_y);
     n_tmp = homogenize(n_r_s);
@@ -362,7 +334,7 @@ __device__ void compute_transforms(unsigned int angle_idx, float3 m_r,
     float (*T_arr)[4] = (float (*)[4])T;
 
     // m_r = discretize(m_r, D_DIST);
-    m_r = times(-1, m_r);
+    m_r = -1*m_r;
 
     trans(m_r, transm);
     roty(m_roty, rot_y);
@@ -370,7 +342,7 @@ __device__ void compute_transforms(unsigned int angle_idx, float3 m_r,
     mat4f_mul(rot_z, rot_y, T_tmp);
     mat4f_mul(T_tmp, transm, T_m_g);
 
-    s_r = times(-1, s_r);
+    s_r = -1*s_r;
     trans(s_r, transm);
     roty(s_roty, rot_y);
     rotz(s_rotz, rot_z);
@@ -417,10 +389,10 @@ __global__ void ppf_kernel(float3 *points, float3 *norms, float4 *out, int count
                 };
                 // MATLAB model_description.m:37
                 float4 ppf = compute_ppf(thisPoint, thisNorm, Spoints[j], Snorms[j]);
-                // if(ppf.w < D_ANGLE0){
-                //     out[idx*count + j + i].x = CUDART_NAN_F;
-                //     continue;
-                // }
+                if(ppf.w < D_ANGLE0){
+                    out[idx*count + j + i].x = CUDART_NAN_F;
+                    continue;
+                }
                 out[idx*count + j + i] = ppf;
                 // MATLAB model_description.m:42
                 out[idx*count + j + i] = disc_feature(out[idx*count + j + i], D_DIST, D_ANGLE0);
@@ -484,9 +456,9 @@ __global__ void ppf_hash_kernel(float4 *ppfs, unsigned int *codes, int count){
 //
 
 // TODO: increase thread work
-__global__ void ppf_vote_kernel(unsigned int *sceneKeys, unsigned int *sceneIndices,
-                                unsigned int *hashKeys, unsigned int *ppfCount,
-                                unsigned int *firstPPFIndex, unsigned int *key2ppfMap,
+__global__ void ppf_vote_kernel(unsigned int *sceneKeys, std::size_t *sceneIndices,
+                                unsigned int *hashKeys, std::size_t *ppfCount,
+                                std::size_t *firstPPFIndex, std::size_t *key2ppfMap,
                                 float3 *modelPoints, float3 *modelNormals, int modelSize,
                                 float3 *scenePoints, float3 *sceneNormals, int sceneSize,
                                 unsigned long *votes_old, int count){
@@ -498,7 +470,14 @@ __global__ void ppf_vote_kernel(unsigned int *sceneKeys, unsigned int *sceneIndi
 
     while(idx < count){
         unsigned int thisSceneKey = sceneKeys[idx];
-        unsigned int thisSceneIndex = sceneIndices[idx];
+        // float4 thisScenePPF = scenePPFs[idx];
+        unsigned int thisSceneIndex
+            = sceneIndices[idx];
+        // if (isnan(thisScenePPF.x) ||
+        //     thisScenePPF != modelPPFs[thisSceneIndex]){
+        //     idx += blockDim.x * gridDim.x;
+        //     continue;
+        // }
         if (thisSceneKey == 0 ||
             thisSceneKey != hashKeys[thisSceneIndex]){
             idx += blockDim.x * gridDim.x;
@@ -572,31 +551,6 @@ __global__ void ppf_reduce_rows_kernel(unsigned long *votes, unsigned int *voteC
             angle_idx = vote & low6;
             accumulator[idx*n_angle+angle_idx]++;
         }
-        //grid stride
-        idx += blockDim.x * gridDim.x;
-    }
-}
-
-// TODO: increase thread work
-__global__ void ppf_score_kernel(unsigned int *accumulator,
-                                 unsigned int *maxidx,
-                                 int n_angle, int threshold,
-                                 unsigned int *scores,
-                                 int count){
-    if(count <= 1) return;
-
-    int ind = threadIdx.x;
-    int idx = ind + blockIdx.x * blockDim.x;
-
-    int thisMaxIdx, score, score_left, score_right;
-
-    while(idx < count){
-        thisMaxIdx = idx*n_angle + maxidx[idx];
-        score_left = thisMaxIdx > 0 ? accumulator[thisMaxIdx-1] : 0;
-        score_right = thisMaxIdx < (n_angle-1) ? accumulator[thisMaxIdx+1] : 0;
-        score = accumulator[thisMaxIdx] + score_left + score_right;
-        scores[idx] = score > threshold ? score : 0;
-
         //grid stride
         idx += blockDim.x * gridDim.x;
     }
@@ -857,8 +811,8 @@ __global__ void rot_clustering_kernel(float3 *translations,
 
             for(int j = 0; j < thisTransCount; j++){
                 float normDiffTrans =
-                    norm(minus(thisTrans,
-                               translations[key2transMap[thisFirstTransIndex+j]]));
+                    norm(thisTrans - 
+                         translations[key2transMap[thisFirstTransIndex+j]]);
                 // TODO: square the threshold instead of sqrting here
                 float quatDiff =
                     sqrt(fabsf(8*(1-dot(thisQuat,
