@@ -87,7 +87,7 @@ public:
 
         thrust::device_vector<unsigned int> *adjacent_trans_hash;
 
-        ParallelHashArray<float4> search_array;
+        ParallelHashArray<unsigned int> search_array;
 
         void accumulateVotes();
 };

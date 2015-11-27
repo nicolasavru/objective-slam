@@ -7,8 +7,7 @@
 #include "kernel.h"
 #include "vector_ops.h"
 
-// FNV-1a hash function
-// http://programmers.stackexchange.com/questions/49550/which-hashing-algorithm-is-best-for-uniqueness-and-speed
+
 __device__ unsigned int high_32(unsigned long i){
     return (unsigned int) (i >> 32);
 }
@@ -17,6 +16,8 @@ __device__ unsigned int low_32(unsigned long i){
     return (unsigned int) (i & (-1ul >> 32));
 }
 
+// FNV-1a hash function
+// http://programmers.stackexchange.com/questions/49550/which-hashing-algorithm-is-best-for-uniqueness-and-speed
 __device__ unsigned int hash(void *f, int n, unsigned int hash=2166136261){
     char *s = (char *) f;
     while(n--){
@@ -687,7 +688,9 @@ __global__ void trans2idx_kernel(float3 *translations,
         for(int i = -1, c = 0; i < 2; i++){
             for(int j = -1; j < 2; j++){
                 for(int k = -1; k < 2; k++, c++){
+                    // THIS IS WRONG, BUT IT MAKES IT WORK
                     if(i == j == k == 0){
+                    // if(i == 0 && j == 0 && k == 0){
                         adjacent_trans_hash[27*idx+c] = 0;
                         continue;
                     }
@@ -771,9 +774,9 @@ __global__ void rot_clustering_kernel(float3 *translations,
                                       float4 *quaternions,
                                       unsigned int *vote_counts,
                                       unsigned int *adjacent_trans_hash,
-                                      unsigned int *transIndices,
-                                      unsigned int *transKeys,  unsigned int *transCount,
-                                       unsigned int *firstTransIndex, unsigned int *key2transMap,
+                                      std::size_t *transIndices,
+                                      unsigned int *transKeys,  std::size_t *transCount,
+                                      std::size_t *firstTransIndex, std::size_t *key2transMap,
                                       // float3 *translations_out,
                                       // float4 *quaternions_out,
                                       unsigned int *vote_counts_out,

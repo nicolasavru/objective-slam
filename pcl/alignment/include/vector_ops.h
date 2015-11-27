@@ -1,5 +1,5 @@
-#ifndef VECTOR_OPS_CUH
-#define VECTOR_OPS_CUH
+#ifndef VECTOR_OPS_H
+#define VECTOR_OPS_H
 
 #include <iostream>
 
@@ -24,4 +24,4 @@ __device__ float4 operator+(float4 u, float4 v);
 __device__ float3 operator-(float3 u, float3 v);
 __device__ float4 operator-(float4 u, float4 v);
 
-#endif /* VECTOR_OPS_CUH */
+#endif /* VECTOR_OPS_H */
