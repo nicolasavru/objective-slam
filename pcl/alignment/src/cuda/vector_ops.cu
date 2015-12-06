@@ -16,6 +16,14 @@ std::ostream& operator<<(std::ostream& out, const float4& obj){
     return out;
 }
 
+__host__ __device__ bool to_bool(float3 f){
+    return f.x || f.y || f.z;
+}
+
+__host__ __device__ bool to_bool(float4 f){
+    return f.x || f.y || f.z || f.w;
+}
+
 __device__ bool operator<(const float4 a, const float4 b){
     // compare 4 bytes at a time instead of 2
     ulong2 ul2a = *((ulong2 *) &a);

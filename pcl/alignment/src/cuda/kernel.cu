@@ -772,14 +772,14 @@ __global__ void trans2idx_kernel(float3 *translations,
 
 __global__ void rot_clustering_kernel(float3 *translations,
                                       float4 *quaternions,
-                                      unsigned int *vote_counts,
+                                      float *vote_counts,
                                       unsigned int *adjacent_trans_hash,
                                       std::size_t *transIndices,
                                       unsigned int *transKeys,  std::size_t *transCount,
                                       std::size_t *firstTransIndex, std::size_t *key2transMap,
                                       // float3 *translations_out,
                                       // float4 *quaternions_out,
-                                      unsigned int *vote_counts_out,
+                                      float *vote_counts_out,
                                       int count){
     if(count <= 1) return;
 
@@ -833,6 +833,25 @@ __global__ void rot_clustering_kernel(float3 *translations,
         }
 
         // grid stride
+        idx += blockDim.x * gridDim.x;
+    }
+}
+
+
+__global__ void vote_weight_kernel(unsigned long *votes, unsigned int *vote_counts,
+                                   float *modelPointVoteWeights, float *weightedVoteCounts,
+                                   int count){
+    if(count <= 1) return;
+
+    int ind = threadIdx.x;
+    int idx = ind + blockIdx.x * blockDim.x;
+
+    while(idx < count){
+        unsigned int modelanglecode = low_32(votes[idx]);
+        unsigned int model_point_idx = (modelanglecode >> 6);
+        weightedVoteCounts[idx] = modelPointVoteWeights[model_point_idx] * vote_counts[idx];
+
+        //grid stride
         idx += blockDim.x * gridDim.x;
     }
 }

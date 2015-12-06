@@ -68,88 +68,6 @@ void test_histogram(char *point_path, int N){
     }
 }
 
-// old code, not currently used
-int ply_load_main(char *point_path, char *norm_path, int N, int devUse){
-    // test_histogram("/tmp/hist_test.bin", 10000);
-    // return 0;
-
-    // file input
-    FILE *points_fin, *norms_fin;
-    size_t result1, result2;
-
-    int numDevices;
-    cudaGetDeviceCount(&numDevices);
-    fprintf(stderr, "numDevices: %d\n", numDevices);
-    cudaDeviceProp prop;
-    for(int i = 0; i < numDevices; i++){
-        cudaGetDeviceProperties(&prop, i);
-        fprintf(stderr, "%d) name: %s\n", i, prop.name);
-    }
-    cudaSetDevice(devUse);
-    int devNum;
-    cudaGetDevice(&devNum);
-    HANDLE_ERROR(cudaGetDeviceProperties(&prop, devNum));
-    fprintf(stderr, "Using device %d, %s: \n", devNum, prop.name);
-
-    points_fin = fopen(point_path, "rb");
-    norms_fin  = fopen(norm_path, "rb");
-    if(points_fin==NULL){fputs ("File error: point_fin",stderr); exit (1);}
-    if(norms_fin==NULL){fputs ("File error: norms_fin",stderr); exit (1);}
-
-    thrust::host_vector<float3> *points = new thrust::host_vector<float3>(N);
-    thrust::host_vector<float3> *norms = new thrust::host_vector<float3>(N);
-
-    if (points == NULL) {fputs ("Memory error: points",stderr); exit (2);}
-    if (norms  == NULL) {fputs ("Memory error: norms",stderr); exit (2);}
-
-    long startTime0 = clock();
-    result1 = fread(RAW_PTR(points),sizeof(float3),N,points_fin);
-    result2 = fread(RAW_PTR(norms),sizeof(float3),N,norms_fin);
-    long finishTime0 = clock();
-
-    cerr<<"Data Load Time"<<" "<<(finishTime0 - startTime0)<<" ms"<<endl;
-
-    if(result1 != N){fputs ("Reading error: points",stderr); exit(3);}
-    if(result2 != N){fputs ("Reading error: norms",stderr); exit(3);}
-
-    // cuda setup
-    int blocks = prop.multiProcessorCount;
-    /* DEBUG */
-    fprintf(stderr, "blocks: %d\n", blocks);
-    /* DEBUG */
-
-    // build model description
-    Model *model = new Model(points, norms, N);
-
-    // model->ppf_lookup();
-
-    // copy ppfs back to host
-    thrust::host_vector<float4> *ppfs = new thrust::host_vector<float4>(*model->getModelPPFs());
-
-    // write out ppfs
-    for(int i = 0; i < 100; i++){
-        cout << "PPF Number: " << i << endl;
-        cout << (*ppfs)[i].x << endl;
-        cout << (*ppfs)[i].y << endl;
-        cout << (*ppfs)[i].z << endl;
-        cout << (*ppfs)[i].w << endl;
-    }
-
-    // Deallocate ram
-    delete points;
-    delete norms;
-    delete ppfs;
-
-    delete model;
-
-    cudaDeviceReset();
-
-    // close input file
-    fclose(points_fin);
-    fclose(norms_fin);
-    return 0;
-}
-
 
 Eigen::Matrix4f ply_load_main(float3 *scenePoints, float3 *sceneNormals, int sceneN,
                               float3 *objectPoints, float3 *objectNormals, int objectN,
@@ -195,18 +113,11 @@ Eigen::Matrix4f ply_load_main(float3 *scenePoints, float3 *sceneNormals, int sce
 
     model->ppf_lookup(scene);
 
-    // thrust::host_vector<unsigned int> *votes = new thrust::host_vector<unsigned int>(*model->votes);
-
-    // unsigned long low6 = ((unsigned long) -1) >> 58;
-    // for (int i=0; i<votes->size(); i++){
-    //     cout << "votes[" << i << "] = " << ((*votes)[i] & low6) << endl;
-    // }
-
     // copy ppfs back to host
     thrust::host_vector<float> *transformations = new thrust::host_vector<float>(*model->getTransformations());
     // thrust::host_vector<unsigned int> *maxval = new thrust::host_vector<unsigned int>(*model->maxval);
-    thrust::host_vector<unsigned int> *maxval =
-        new thrust::host_vector<unsigned int>(*model->vote_counts_out);
+    thrust::host_vector<float> *maxval =
+        new thrust::host_vector<float>(*model->vote_counts_out);
 
     // write out transformations
     // (*maxval)[0] is all the unallocated votes
@@ -244,23 +155,3 @@ Eigen::Matrix4f ply_load_main(float3 *scenePoints, float3 *sceneNormals, int sce
 
     return T;
 }
-
-// int ppf_run(Eigen::MatrixXf &points, Eigen::MatrixXf &normals){
-//     float *point_data = points.data();
-//     float *normal_data = normals.data();
-//     int size = points.rows()*points.cols()*sizeof(float);
-
-//     float *dev_point_data, *dev_normal_data;
-//     HANDLE_ERROR(cudaMalloc((void **) &dev_point_data, size));
-//     HANDLE_ERROR(cudaMemcpy(dev_point_data, point_data. size));
-
-//     HANDLE_ERROR(cudaMalloc((void **) &dev_normal_data, size));
-//     HANDLE_ERROR(cudaMemcpy(dev_normal_data, point_data. size));
-
-//     cudaDeviceProp prop;
-//     HANDLE_ERROR(cudaGetDeviceProperties(&prop, 0));
-//     int blocks = prop.multiProcessorCount;
-
-//     ppf_kernel<<<blocks*2,256>>>(dev_buffer, SIZE, dev_histo);
-
-// }

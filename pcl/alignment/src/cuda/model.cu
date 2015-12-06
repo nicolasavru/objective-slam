@@ -38,6 +38,7 @@ struct float16 {
 
 Model::Model(thrust::host_vector<float3> *points, thrust::host_vector<float3> *normals, int n){
     this->initPPFs(points, normals, n);
+    this->modelPointVoteWeights = thrust::device_vector<float>(n, 1);
 
     // For each element of data, compute a 32-bit hash,
     thrust::device_vector<unsigned int> nonunique_hashkeys =
@@ -52,6 +53,10 @@ Model::Model(thrust::host_vector<float3> *points, thrust::host_vector<float3> *n
 
 Model::~Model(){
     // TODO
+}
+
+void Model::SetModelPointVoteWeights(thrust::device_vector<float> modelPointVoteWeights){
+    this->modelPointVoteWeights = modelPointVoteWeights;
 }
 
 void Model::ppf_lookup(Scene *scene){
@@ -87,14 +92,22 @@ void Model::ppf_lookup(Scene *scene){
     this->voteCounts = new thrust::device_vector<unsigned int>();
     histogram_destructive(*votes_old, *(this->votes), *(this->voteCounts));
 
+
+    this->weightedVoteCounts = thrust::device_vector<float>(this->votes->size());
+    blocks = std::min(((int)(this->votes->size()) + BLOCK_SIZE - 1) / BLOCK_SIZE, MAX_NBLOCKS);
+    vote_weight_kernel<<<blocks,BLOCK_SIZE>>>
+        (RAW_PTR(this->votes), RAW_PTR(this->voteCounts),
+         thrust::raw_pointer_cast(this->modelPointVoteWeights.data()),
+         thrust::raw_pointer_cast(this->weightedVoteCounts.data()),
+         this->votes->size());
+
+
     this->transformations = new thrust::device_vector<float>(this->votes->size()*16);
     /* DEBUG */
     fprintf(stderr, "votes_size: %d\n", this->votes->size());
     /* DEBUG */
 
     blocks = std::min(((int)(this->votes->size()) + BLOCK_SIZE - 1) / BLOCK_SIZE, MAX_NBLOCKS);
-
-
     trans_calc_kernel2<<<blocks,BLOCK_SIZE>>>
         (RAW_PTR(votes),
          RAW_PTR(this->modelPoints), RAW_PTR(this->modelNormals),
@@ -129,11 +142,12 @@ void Model::ppf_lookup(Scene *scene){
     thrust::device_vector<std::size_t> *transIndices =
         trans_search_array.GetIndices(adjacent_trans_hash);
 
-    this->vote_counts_out = new thrust::device_vector<unsigned int>(*(this->voteCounts));
+    this->vote_counts_out = new thrust::device_vector<float>(this->weightedVoteCounts);
     blocks = std::min(((int)(this->votes->size()) + BLOCK_SIZE - 1) / BLOCK_SIZE, MAX_NBLOCKS);
     rot_clustering_kernel<<<blocks,BLOCK_SIZE>>>
         (RAW_PTR(this->transformation_trans), RAW_PTR(this->transformation_rots),
-         RAW_PTR(this->voteCounts), thrust::raw_pointer_cast(adjacent_trans_hash.data()),
+         thrust::raw_pointer_cast(this->weightedVoteCounts.data()),
+         thrust::raw_pointer_cast(adjacent_trans_hash.data()),
          RAW_PTR(transIndices), RAW_PTR(trans_search_array.GetHashkeys()),
          RAW_PTR(trans_search_array.GetCounts()),
          RAW_PTR(trans_search_array.GetFirstHashkeyIndices()),

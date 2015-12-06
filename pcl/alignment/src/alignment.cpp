@@ -23,6 +23,8 @@
 #include <pcl/filters/random_sample.h>
 
 #include "ppf.h"
+#include "vector_ops.h"
+#include "impl/scene_generation.hpp"
 //#include "my_ppf_registration.h"
 
 // Types
@@ -71,24 +73,14 @@ typename pcl::PointCloud<Point>::Ptr voxelGridDownsample(typename pcl::PointClou
 
 // Align a rigid object to a scene with clutter and occlusions
 int main(int argc, char **argv){
+    srand(time(0));
+
     // Point clouds
     PointCloudT::Ptr object(new PointCloudT);
     PointCloudT::Ptr object_aligned(new PointCloudT);
     PointCloudT::Ptr scene(new PointCloudT);
     FeatureCloudT::Ptr object_features(new FeatureCloudT);
     FeatureCloudT::Ptr scene_features(new FeatureCloudT);
-
-    // cuda compilation experimentation
-    if (argc == 2){
-        int N = atoi(argv[1]);
-        ply_load_main("/tmp/points.txt", "/tmp/norms.txt", N, 1);
-        return 2;
-    } else if (argc == 3){
-//        int N = atoi(argv[1]);
-//        int devUse = atoi(argv[2]);
-//        ply_load_main("/tmp/points.txt", "/tmp/norms.txt", N, devUse);
-//        return 2;
-    }
 
     // Get input object and scene
     if (argc != 3){
@@ -179,32 +171,36 @@ int main(int argc, char **argv){
     Eigen::Matrix4f T = ply_load_main(scene_points, scene_normals, scene->size(), object_points,
                                       object_normals, object->size(), 1);
 
+    float3 t = {0, 0, 0};
+    float4 r = {0, 0, 0, 0};
+    GenerateSceneWithModel(*object, *scene, t, r);
+
     // MATLAB drost.m:80-108
     cout << T << endl;
     pcl::transformPointCloudWithNormals(*object, *object_aligned, T);
-    boost::shared_ptr<pcl::visualization::PCLVisualizer> viewer (new pcl::visualization::PCLVisualizer ("3D Viewer"));
-    viewer->setBackgroundColor (0, 0, 0);
+    boost::shared_ptr<pcl::visualization::PCLVisualizer> viewer(new pcl::visualization::PCLVisualizer ("3D Viewer"));
+    viewer->setBackgroundColor(0, 0, 0);
 
-    viewer->addPointCloud<PointNT> (scene, "scene");
-    viewer->addPointCloudNormals<PointNT, PointNT> (scene, scene, 5, 0.05, "scene_normals");
+    viewer->addPointCloud<PointNT>(scene, "scene");
+    viewer->addPointCloudNormals<PointNT, PointNT>(scene, scene, 5, 0.05, "scene_normals");
 
     ColorHandlerT red_color(object, 255, 0, 0);
-    viewer->addPointCloud<PointNT> (object, red_color, "object");
-    viewer->addPointCloudNormals<PointNT, PointNT> (object, object, 5, 0.05, "object_normals");
-    viewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "object");
+    viewer->addPointCloud<PointNT>(object, red_color, "object");
+    viewer->addPointCloudNormals<PointNT, PointNT>(object, object, 5, 0.05, "object_normals");
+    viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "object");
 
     ColorHandlerT green_color(object_aligned, 0, 255, 0);
-    viewer->addPointCloud<PointNT> (object_aligned, green_color, "object_aligned");
-    viewer->addPointCloudNormals<PointNT, PointNT> (object_aligned, object_aligned,
-                                                    5, 0.05, "object_aligned_normals");
-    viewer->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "object_aligned");
+    viewer->addPointCloud<PointNT>(object_aligned, green_color, "object_aligned");
+    viewer->addPointCloudNormals<PointNT, PointNT>(object_aligned, object_aligned,
+                                                   5, 0.05, "object_aligned_normals");
+    viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "object_aligned");
 
     viewer->addCoordinateSystem (1.0, "foo", 0);
     viewer->initCameraParameters ();
 
     while (!viewer->wasStopped ()){
-        viewer->spinOnce (100);
-        boost::this_thread::sleep (boost::posix_time::microseconds (100000));
+        viewer->spinOnce(100);
+        boost::this_thread::sleep(boost::posix_time::microseconds (100000));
     }
 
 //    // // Estimate features

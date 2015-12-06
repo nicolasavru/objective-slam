@@ -19,6 +19,8 @@ class Model : public Scene {
 
         ~Model();
 
+        void SetModelPointVoteWeights(thrust::device_vector<float> modelPointVoteWeights);
+
         void ppf_lookup(Scene *scene);
 
         thrust::device_vector<float>* getTransformations();
@@ -74,7 +76,7 @@ public:
 
         thrust::device_vector<float4> *transformation_rots;
         thrust::device_vector<float3> *transformation_trans;
-        thrust::device_vector<unsigned int> *vote_counts_out;
+        thrust::device_vector<float> *vote_counts_out;
 
         thrust::device_vector<unsigned int> *accumulator;
         thrust::device_vector<unsigned int> *maxidx;
@@ -88,6 +90,8 @@ public:
         thrust::device_vector<unsigned int> *adjacent_trans_hash;
 
         ParallelHashArray<unsigned int> search_array;
+        thrust::device_vector<float> modelPointVoteWeights;
+        thrust::device_vector<float> weightedVoteCounts;
 
         void accumulateVotes();
 };

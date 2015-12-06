@@ -6,6 +6,9 @@
 std::ostream& operator<<(std::ostream& out, const float3& obj);
 std::ostream& operator<<(std::ostream& out, const float4& obj);
 
+__host__ __device__ bool to_bool(float3 f);
+__host__ __device__ bool to_bool(float4 f);
+
 __device__ bool operator<(const float3 a, const float3 b);
 __device__ bool operator<(const float4 a, const float4 b);
 

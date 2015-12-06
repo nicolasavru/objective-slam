@@ -70,19 +70,23 @@ __global__ void mat2transquat_kernel(float *transformations,
 
 __global__ void rot_clustering_kernel(float3 *translations,
                                       float4 *quaternions,
-                                      unsigned int *vote_counts,
+                                      float *vote_counts,
                                       unsigned int *adjacent_trans_hash,
                                       std::size_t *transIndices,
                                       unsigned int *transKeys,  std::size_t *transCount,
                                       std::size_t *firstTransIndex, std::size_t *key2transMap,
                                       // float3 *translations_out,
                                       // float4 *quaternions_out,
-                                      unsigned int *vote_counts_out,
+                                      float *vote_counts_out,
                                       int count);
 
 __global__ void trans2idx_kernel(float3 *translations,
                                  unsigned int *trans_hash,
                                  unsigned int *adjacent_trans_hash,
                                  int count);
+
+__global__ void vote_weight_kernel(unsigned long *votes, unsigned int *vote_counts,
+                                   float *modelPointWeights, float *weightedVoteCounts,
+                                   int count);
 
 #endif /* __KERNEL_H */
