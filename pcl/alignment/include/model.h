@@ -3,7 +3,9 @@
 
 #include <cuda.h>
 #include <cuda_runtime.h>                // Stops underlining of __global__
-#include <device_launch_parameters.h>    // Stops underlining of threadIdx etc.
+#include <Eigen/Core>
+#include <pcl/point_types.h>
+#include <pcl/point_cloud.h>
 #include <thrust/device_vector.h>
 #include <thrust/host_vector.h>
 
@@ -13,20 +15,30 @@
 
 class Model : public Scene {
 
-    public:
+  public:
+    Model(pcl::PointCloud<pcl::PointNormal> *cloud,
+          thrust::host_vector<float3>*points, thrust::host_vector<float3> *normals, int n);
+    ~Model();
 
-        Model(thrust::host_vector<float3>*points, thrust::host_vector<float3> *normals, int n);
+    void SetModelPointVoteWeights(thrust::device_vector<float> modelPointVoteWeights);
+    void ComputeUniqueVotes(Scene *scene);
+    thrust::device_vector<float>
+    ComputeWeightedVoteCounts(thrust::device_vector<unsigned long> votes,
+                              thrust::device_vector<unsigned int> vote_counts,
+                              thrust::device_vector<float> modelpoint_vote_weights);
+    void ComputeTransformations(Scene *scene);
+    thrust::device_vector<float> *ClusterTransformations();
 
-        ~Model();
+    float ScorePose(const float *weights, Eigen::Matrix4f truth,
+                    pcl::PointCloud<pcl::PointNormal> scene);
+    thrust::device_vector<float> OptimizeWeights(Scene *scene);
 
-        void SetModelPointVoteWeights(thrust::device_vector<float> modelPointVoteWeights);
+    void ppf_lookup(Scene *scene);
 
-        void ppf_lookup(Scene *scene);
-
-        thrust::device_vector<float>* getTransformations();
-
+    thrust::device_vector<float> getTransformations();
+    pcl::PointCloud<pcl::PointNormal> *cloud_ptr;
     // private:
-public:
+  public:
 
         // ppfCount[i] is the number of PPFs whose hash is hashKeys[i];
         thrust::device_vector<unsigned int> *ppfCount;
@@ -72,7 +84,7 @@ public:
 
         // transformations stores 4 by 4 arrays of transformation matrices
         // however it uses linear indexing
-        thrust::device_vector<float> *transformations;
+        thrust::device_vector<float> transformations;
 
         thrust::device_vector<float4> *transformation_rots;
         thrust::device_vector<float3> *transformation_trans;

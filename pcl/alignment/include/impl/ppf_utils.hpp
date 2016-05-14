@@ -3,7 +3,6 @@
 
 #include <cuda.h>
 #include <cuda_runtime.h>                // Stops underlining of __global__
-#include <device_launch_parameters.h>    // Stops underlining of threadIdx etc.
 #include <thrust/device_vector.h>
 #include <thrust/functional.h>
 #include <thrust/inner_product.h>
@@ -60,9 +59,9 @@ void histogram_destructive(Vector1& data,
                                                thrust::plus<IndexType>(),
                                                thrust::not_equal_to<ValueType>());
 
-    #ifdef DEBUG
-        fprintf(stderr, "num_bins: %d\n", num_bins);
-    #endif
+    // #ifdef DEBUG
+    // fprintf(stderr, "num_bins: %d\n", num_bins);
+    // #endif
 
     histogram_values.resize(num_bins);
     histogram_counts.resize(num_bins);

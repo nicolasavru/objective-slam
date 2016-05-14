@@ -4,7 +4,6 @@
 #include <cstdlib>
 #include <cuda.h>
 #include <cuda_runtime.h>                // Stops underlining of __global__
-#include <device_launch_parameters.h>    // Stops underlining of threadIdx etc.
 #include <math_constants.h>
 
 #include "debug.h"
@@ -20,6 +19,34 @@
 #define TRANS_THRESH (0.5*D_DIST)
 #define ROT_THRESH (2*D_ANGLE0)
 #define SCORE_THRESHOLD 0
+
+__host__ __device__ unsigned int high_32(unsigned long i);
+__host__ __device__ unsigned int low_32(unsigned long i);
+__host__ __device__ unsigned int hash(void *f, int n, unsigned int hash=2166136261);
+__host__ __device__ __forceinline__ void zeroMat4(float T[4][4]);
+__host__ __device__ float dot(float3 v1, float3 v2);
+__host__ __device__ float dot(float4 v1, float4 v2);
+__host__ __device__ float norm(float3 v);
+__host__ __device__ float norm(float4 v);
+__host__ __device__  float3 cross(float3 u, float3 v);
+__host__ __device__ float quant_downf(float x, float y);
+__host__ __device__ float4 disc_feature(float4 f, float d_dist, float d_angle);
+__host__ __device__ float3 discretize(float3 f, float d_dist);
+__host__ __device__ float4 compute_ppf(float3 p1, float3 n1, float3 p2, float3 n2);
+__host__ __device__ float3 trans(float T[4][4]);
+__host__ __device__ float4 hrotmat2quat(float T[4][4]);
+__host__ __device__ void trans(float3 v, float T[4][4]);
+__host__ __device__ void rotx(float theta, float T[4][4]);
+__host__ __device__ void roty(float theta, float T[4][4]);
+__host__ __device__ void rotz(float theta, float T[4][4]);
+__host__ __device__ void mat4f_mul(const float A[4][4],
+                                   const float B[4][4],
+                                   float C[4][4]);
+__host__ __device__ float3 mat3f_vmul(const float A[3][3], const float3 b);
+__host__ __device__ float4 mat4f_vmul(const float A[4][4], const float4 b);
+__host__ __device__ float4 homogenize(float3 v);
+__host__ __device__ float3 dehomogenize(float4 v);
+__host__ __device__ void invht(float T[4][4], float T_inv[4][4]);
 
 __global__ void ppf_kernel(float3 *points, float3 *norms, float4 *out, int count);
 

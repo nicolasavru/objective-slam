@@ -3,7 +3,8 @@
 
 #include <cuda.h>
 #include <cuda_runtime.h>                // Stops underlining of __global__
-#include <device_launch_parameters.h>    // Stops underlining of threadIdx etc.
+#include <pcl/point_types.h>
+#include <pcl/point_cloud.h>
 #include <thrust/device_vector.h>
 #include <thrust/host_vector.h>
 
@@ -16,7 +17,7 @@ class Scene {
     public:
 
         Scene();
-        Scene(thrust::host_vector<float3>*points, thrust::host_vector<float3> *normals, int n);
+        Scene(pcl::PointCloud<pcl::PointNormal> *cloud_ptr);
 
         ~Scene();
 
@@ -25,6 +26,8 @@ class Scene {
         thrust::device_vector<float3> *getModelNormals();
         thrust::device_vector<float4> *getModelPPFs();
         thrust::device_vector<unsigned int> *getHashKeys();
+
+        pcl::PointCloud<pcl::PointNormal> *cloud_ptr;
 
     protected:
 

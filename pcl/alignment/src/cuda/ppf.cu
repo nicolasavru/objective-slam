@@ -4,7 +4,6 @@
 #include <stdlib.h>
 #include <cuda.h>
 #include <cuda_runtime.h>                // Stops underlining of __global__
-#include <device_launch_parameters.h>    // Stops underlining of threadIdx etc.
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <thrust/device_vector.h>
@@ -68,23 +67,53 @@ void test_histogram(char *point_path, int N){
     }
 }
 
+void ptr_test_cu(pcl::PointCloud<pcl::PointNormal> *scene_cloud_ptr){
+    /* DEBUG */
+    fprintf(stderr, "foo-1: %p, %d, %d\n", scene_cloud_ptr, scene_cloud_ptr->points.size(), scene_cloud_ptr->size());
+}
 
-Eigen::Matrix4f ply_load_main(float3 *scenePoints, float3 *sceneNormals, int sceneN,
+void ptr_test_cu2(pcl::PointCloud<pcl::PointNormal> scene_cloud){
+    /* DEBUG */
+    fprintf(stderr, "foo-2: %d, %d\n", scene_cloud.points.size(), scene_cloud.size());
+}
+
+void ptr_test_cu3(pcl::PointCloud<pcl::PointNormal> &scene_cloud){
+    /* DEBUG */
+    fprintf(stderr, "foo-3: %d, %d\n", scene_cloud.points.size(), scene_cloud.size());
+}
+
+void ptr_test_cu4(const pcl::PointCloud<pcl::PointNormal> &scene_cloud){
+    /* DEBUG */
+    fprintf(stderr, "foo-4: %d, %d\n", scene_cloud.points.size(), scene_cloud.size());
+}
+
+
+Eigen::Matrix4f ply_load_main(pcl::PointCloud<pcl::PointNormal> *scene_cloud_ptr,
+                              float3 *scenePoints, float3 *sceneNormals, int sceneN,
+                              pcl::PointCloud<pcl::PointNormal> *object_cloud_ptr,
                               float3 *objectPoints, float3 *objectNormals, int objectN,
                               int devUse){
+    /* DEBUG */
+    fprintf(stderr, "foo1: %p, %d, %d\n", scene_cloud_ptr, scene_cloud_ptr->points.size(), scene_cloud_ptr->size());
+    /* DEBUG */
+    int *device_array = 0;
+    HANDLE_ERROR(cudaMalloc((void**)&device_array, 1024*sizeof(int)));
+
     int numDevices;
-    cudaGetDeviceCount(&numDevices);
+    HANDLE_ERROR(cudaGetDeviceCount(&numDevices));
     fprintf(stderr, "numDevices: %d\n", numDevices);
     cudaDeviceProp prop;
     for(int i = 0; i < numDevices; i++){
         cudaGetDeviceProperties(&prop, i);
         fprintf(stderr, "%d) name: %s\n", i, prop.name);
     }
-    cudaSetDevice(devUse);
+    // HANDLE_ERROR(cudaSetDevice(devUse));
+    HANDLE_ERROR(cudaSetDevice(numDevices > 1 ? devUse : 0));
     int devNum;
-    cudaGetDevice(&devNum);
+    HANDLE_ERROR(cudaGetDevice(&devNum));
     HANDLE_ERROR(cudaGetDeviceProperties(&prop, devNum));
     fprintf(stderr, "Using device %d, %s: \n", devNum, prop.name);
+    // thrust::device_vector<float3> foo(1024);
 
     // convert float3 * to thrust::host_vector<float3>
     thrust::host_vector<float3> *scenePointsVec =
@@ -108,13 +137,17 @@ Eigen::Matrix4f ply_load_main(float3 *scenePoints, float3 *sceneNormals, int sce
     /* DEBUG */
 
     // build model description
-    Model *model = new Model(objectPointsVec, objectNormsVec, objectN);
-    Scene *scene = new Scene(scenePointsVec, sceneNormsVec, sceneN);
+    Model *model = new Model(object_cloud_ptr, objectPointsVec, objectNormsVec, objectN);
+
+    /* DEBUG */
+    fprintf(stderr, "foo0: %d\n", scene_cloud_ptr->points.size());
+    /* DEBUG */
+    Scene *scene = new Scene(scene_cloud_ptr);
 
     model->ppf_lookup(scene);
 
     // copy ppfs back to host
-    thrust::host_vector<float> *transformations = new thrust::host_vector<float>(*model->getTransformations());
+    thrust::host_vector<float> transformations = thrust::host_vector<float>(model->getTransformations());
     // thrust::host_vector<unsigned int> *maxval = new thrust::host_vector<unsigned int>(*model->maxval);
     thrust::host_vector<float> *maxval =
         new thrust::host_vector<float>(*model->vote_counts_out);
@@ -127,7 +160,7 @@ Eigen::Matrix4f ply_load_main(float3 *scenePoints, float3 *sceneNormals, int sce
        cout << "transforms(:,:," << i << ") = [";
        for (int j=0; j<4; j++){
            for (int k=0; k<4; k++){
-               cout << (*transformations)[i*16+j*4+k] << " ";
+               cout << transformations[i*16+j*4+k] << " ";
            }
            cout << ";" << endl;
        }
@@ -138,7 +171,7 @@ Eigen::Matrix4f ply_load_main(float3 *scenePoints, float3 *sceneNormals, int sce
     Eigen::Matrix4f T;
     for (int j=0; j<4; j++){
         for (int k=0; k<4; k++){
-            T(j,k) = (*transformations)[16+j*4+k];
+            T(j,k) = transformations[16+j*4+k];
         }
     }
 

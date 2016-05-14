@@ -10,6 +10,7 @@
 #include <pcl/features/ppf.h>
 #include <pcl/filters/filter.h>
 #include <pcl/filters/voxel_grid.h>
+#include <pcl/keypoints/uniform_sampling.h>
 #include <pcl/io/pcd_io.h>
 #include <pcl/io/ply_io.h>
 #include <pcl/registration/icp.h>
@@ -17,7 +18,6 @@
 #include <pcl/registration/sample_consensus_prerejective.h>
 #include <pcl/segmentation/sac_segmentation.h>
 #include <pcl/visualization/pcl_visualizer.h>
-#include <pcl/keypoints/uniform_sampling.h>
 #include <pcl/kdtree/kdtree_flann.h>
 #include <pcl/features/normal_3d.h>
 #include <pcl/filters/random_sample.h>
@@ -70,6 +70,11 @@ typename pcl::PointCloud<Point>::Ptr voxelGridDownsample(typename pcl::PointClou
     return filtered_cloud;
 }
 
+
+void ptr_test(pcl::PointCloud<pcl::PointNormal> *scene_cloud_ptr){
+    /* DEBUG */
+    fprintf(stderr, "foo-1: %p, %d, %d\n", scene_cloud_ptr, scene_cloud_ptr->points.size(), scene_cloud_ptr->size());
+}
 
 // Align a rigid object to a scene with clutter and occlusions
 int main(int argc, char **argv){
@@ -142,6 +147,7 @@ int main(int argc, char **argv){
     // nest_scene.setInputCloud(scene);
     // nest_scene.compute(*scene);
 
+    // CenterScene(*scene);
 
     // Convert point clouds to arrays of float3.
     // TODO: Check for malloc errors
@@ -149,7 +155,8 @@ int main(int argc, char **argv){
     float3 *scene_normals = (float3 *) malloc(scene->size()*sizeof(float3));
     float3 *object_points = (float3 *) malloc(object->size()*sizeof(float3));
     float3 *object_normals = (float3 *) malloc(object->size()*sizeof(float3));
-    for (int i=0; i<scene->size(); i++){
+
+    for (int i = 0; i < scene->size(); i++){
         (scene_points+i)->x = scene->points[i].x;
         (scene_points+i)->y = scene->points[i].y;
         (scene_points+i)->z = scene->points[i].z;
@@ -158,7 +165,7 @@ int main(int argc, char **argv){
         (scene_normals+i)->z = scene->points[i].normal_z;
     }
 
-    for (int i=0; i<object->size(); i++){
+    for (int i = 0; i < object->size(); i++){
         (object_points+i)->x = object->points[i].x;
         (object_points+i)->y = object->points[i].y;
         (object_points+i)->z = object->points[i].z;
@@ -166,14 +173,27 @@ int main(int argc, char **argv){
         (object_normals+i)->y = object->points[i].normal_y;
         (object_normals+i)->z = object->points[i].normal_z;
     }
+
     // MATLAB drost.m 59-63 model_description() and voting_scheme()
     // pass in object and scene, get back transformation matching object to scene
-    Eigen::Matrix4f T = ply_load_main(scene_points, scene_normals, scene->size(), object_points,
-                                      object_normals, object->size(), 1);
+    pcl::PointCloud<pcl::PointNormal> test_cloud = pcl::PointCloud<pcl::PointNormal>(*scene);
+    pcl::PointCloud<pcl::PointNormal> *test_cloud2 = new pcl::PointCloud<pcl::PointNormal>(*scene);
+    /* DEBUG */
+    fprintf(stderr, "foo0: %p, %d, %d\n", scene.get(), scene.get()->points.size(), scene.get()->size());
+    fprintf(stderr, "foo0: %p, %d, %d\n", &test_cloud, (&test_cloud)->points.size(), (&test_cloud)->size());
+    // fprintf(stderr, "foo0: %p, %d, %d\n", test_cloud2, test_cloud2->points.size(), test_cloud2->size());
+    ptr_test(test_cloud2);
+    ptr_test_cu(test_cloud2);
+    ptr_test_cu2(*test_cloud2);
+    ptr_test_cu3(*test_cloud2);
+    ptr_test_cu4(*test_cloud2);
+    /* DEBUG */
+    Eigen::Matrix4f T = ply_load_main(test_cloud2, scene_points, scene_normals, scene->size(),
+                                      object.get(), object_points, object_normals, object->size(), 1);
 
     float3 t = {0, 0, 0};
     float4 r = {0, 0, 0, 0};
-    GenerateSceneWithModel(*object, *scene, t, r);
+    // GenerateSceneWithModel(*object, *scene, t, r);
 
     // MATLAB drost.m:80-108
     cout << T << endl;
@@ -200,7 +220,7 @@ int main(int argc, char **argv){
 
     while (!viewer->wasStopped ()){
         viewer->spinOnce(100);
-        boost::this_thread::sleep(boost::posix_time::microseconds (100000));
+        boost::this_thread::sleep(boost::posix_time::microseconds(100000));
     }
 
 //    // // Estimate features

@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <cuda.h>
 #include <cuda_runtime.h>                // Stops underlining of __global__
+#include <pcl/point_types.h>
+#include <pcl/point_cloud.h>
 #include <thrust/sort.h>
 #include <thrust/inner_product.h>
 #include <thrust/iterator/constant_iterator.h>
@@ -14,8 +16,29 @@
 
 Scene::Scene(){}
 
-Scene::Scene(thrust::host_vector<float3> *points, thrust::host_vector<float3> *normals, int n){
-    this->initPPFs(points, normals, n);
+Scene::Scene(pcl::PointCloud<pcl::PointNormal> *cloud_ptr){
+    /* DEBUG */
+    fprintf(stderr, "foo0: %d\n", cloud_ptr->size());
+    /* DEBUG */
+    this->cloud_ptr = cloud_ptr;
+    thrust::host_vector<float3> *scene_points =
+        new thrust::host_vector<float3>(cloud_ptr->size());
+    thrust::host_vector<float3> *scene_normals =
+        new thrust::host_vector<float3>(cloud_ptr->size());
+
+    for (int i = 0; i < cloud_ptr->size(); i++){
+        (*scene_points)[i].x = (*cloud_ptr)[i].x;
+        (*scene_points)[i].y = (*cloud_ptr)[i].y;
+        (*scene_points)[i].z = (*cloud_ptr)[i].z;
+        (*scene_normals)[i].x = (*cloud_ptr)[i].normal_x;
+        (*scene_normals)[i].y = (*cloud_ptr)[i].normal_y;
+        (*scene_normals)[i].z = (*cloud_ptr)[i].normal_z;
+    }
+
+    // this->initPPFs(points, normals, n);
+    this->initPPFs(scene_points, scene_normals, cloud_ptr->size());
+    HANDLE_ERROR(cudaGetLastError());
+    HANDLE_ERROR(cudaDeviceSynchronize());
     this->hashKeys = new thrust::device_vector<unsigned int>(this->modelPPFs->size());
 
     int blocks = std::min(((int)(this->modelPPFs->size()) + BLOCK_SIZE - 1) / BLOCK_SIZE, MAX_NBLOCKS);
@@ -38,7 +61,7 @@ void Scene::initPPFs(thrust::host_vector<float3> *points, thrust::host_vector<fl
     this->modelNormals = new thrust::device_vector<float3>(*normals);
     this->modelPPFs = new thrust::device_vector<float4>(n*n);
 
-    #ifdef DEBUG
+#ifdef DEBUG
         fprintf(stderr, "n: %d\n", n);
 
         // start cuda timer
@@ -48,6 +71,7 @@ void Scene::initPPFs(thrust::host_vector<float3> *points, thrust::host_vector<fl
         HANDLE_ERROR(cudaEventRecord(start, 0));
     #endif
 
+    // This will crash if n = 0;
     int blocks = std::min(((int)(this->n + BLOCK_SIZE) - 1) / BLOCK_SIZE, MAX_NBLOCKS);
     // MATLAB drost.m:59, all of model_description.m
     // ppf_kernel computes ppfs and descritizes them, but does *not* hash them

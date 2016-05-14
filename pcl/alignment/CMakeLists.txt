@@ -1,7 +1,8 @@
 # include(/opt/pcl/src/pcl/cmake/pcl_utils.cmake)
 
 cmake_minimum_required(VERSION 2.8 FATAL_ERROR)
-#SET(CMAKE_BUILD_TYPE RelWithDebInfo)
+SET(CMAKE_BUILD_TYPE RelWithDebInfo)
+# SET(CMAKE_BUILD_TYPE Release)
 
 project(alignment)
 
@@ -9,7 +10,8 @@ project(alignment)
 find_package(PCL 1.7 REQUIRED)
 
 set(CMAKE_MODULE_PATH "/opt/pcl/src/pcl/cmake/Modules/" ${CMAKE_MODULE_PATH})
-find_package(Eigen REQUIRED)
+# find_package(Eigen REQUIRED)
+find_package(Eigen3 REQUIRED)
 
 #cuda info:
 # http://stackoverflow.com/questions/13073717/building-cuda-object-files-using-cmake
@@ -25,11 +27,35 @@ FILE(GLOB srcs src/*.cpp)
 FILE(GLOB cuda src/cuda/*.cu)
 
 source_group("Source Files\\cuda" FILES ${cuda})
-source_group("Source Files" FILES ${srcs} )
+source_group("Source Files" FILES ${srcs})
 
 set(LIB_NAME alignment_cuda)
 
-include_directories(${PCL_INCLUDE_DIRS} ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/src ${CUDA_INCLUDE_DIRS})
+find_library(CUDADEVRT
+   NAMES cudadevrt
+   PATHS "/opt/" "/usr/local/" 
+   PATH_SUFFIXES "cuda/lib64"
+   DOC "Location of CudaOptimize library"
+   NO_DEFAULT_PATH
+)
+
+# CudaOptimize library
+find_library(CUDA_OPTIMIZE_LIB
+   NAMES CudaOptimize
+   PATHS "C:/Program Files/CudaOptimize/" "/usr/" "/home/avru/Documents/Senior_Project/libcudaoptimize/libCudaOptimize-1.0.0-src/build_docker"
+   # PATH_SUFFIXES "lib"
+   DOC "Location of CudaOptimize library"
+   NO_DEFAULT_PATH
+   )
+
+find_path(CUDAOPTIMIZE_INCLUDE_DIR
+   SolutionSet.h
+   PATHS "C:/Program Files/CudaOptimize/include" "/usr/include/libCudaOptimize/" "/home/avru/Documents/Senior_Project/libcudaoptimize/libCudaOptimize-1.0.0-src/"
+   DOC "Location of cudaOptimize headers"
+   NO_DEFAULT_PATH
+   )
+
+include_directories(${PCL_INCLUDE_DIRS} ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/src ${CUDA_INCLUDE_DIRS} ${CUDAOPTIMIZE_INCLUDE_DIR})
 
 link_directories(${PCL_LIBRARY_DIRS})
 add_definitions(${PCL_DEFINITIONS})
@@ -48,10 +74,14 @@ foreach(d ${vtk_flags})
 endforeach()
 
 # list(APPEND CUDA_LIBRARIES -lcudadevrt)
-set(CUDA_HOST_COMPILER g++-4.9)
+set(CUDA_HOST_COMPILER "/usr/bin/g++-4.8")
+set(CMAKE_CXX_COMPILER "/usr/bin/g++-4.8")
+
+# set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --std=c++11 -D_MWAITXINTRIN_H_INCLUDED -D__STRICT_ANSI__ -D_FORCE_INLINES -O0 -g")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D_MWAITXINTRIN_H_INCLUDED -O0 -g")
 
 if (UNIX OR APPLE)
-    set (CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS};-Xcompiler;-fPIC;--std=c++11)
+    set (CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS};-Xcompiler;-fPIC)
 endif()
 
 if(NOT UNIX OR APPLE)
@@ -59,13 +89,15 @@ if(NOT UNIX OR APPLE)
 endif()
 
 # set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS} "--ftz=true --prec-div=false --prec-sqrt=false -arch=sm_35 -DTHRUST_DEBUG -G -g")
-set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS};--ftz=true;--prec-div=false;--prec-sqrt=false;-arch=sm_35;-DTHRUST_DEBUG; -lcudadevrt)
-# set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS} "--ftz=true --prec-div=false --prec-sqrt=false -arch=sm_35")
+set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS};--ftz=true;--prec-div=false;--prec-sqrt=false;-arch=sm_35;-DTHRUST_DEBUG;-g)
 # CUDA_COMPILE(cuda_objs ${cuda})
-CUDA_ADD_LIBRARY(alignment_lib ${cuda})
 
+set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS} -Xcudafe "--diag_suppress=boolean_controlling_expr_is_constant")
+set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS} -I/home/avru/Documents/Senior_Project/thrust )
 
+# set(CUDA_64_BIT_DEVICE_CODE ON)
 
+CUDA_ADD_LIBRARY(alignment_lib ${cuda} ${srcs})
 
 # if (WIN32)
 #     add_executable (alignment src/alignment.cpp ${cuda})
@@ -74,7 +106,21 @@ CUDA_ADD_LIBRARY(alignment_lib ${cuda})
 # endif()
 
 # CUDA_ADD_EXECUTABLE (alignment src/alignment.cpp)
+# CUDA_ADD_LIBRARY(test_lib src/cuda/book.cu src/test.cu)
+# CUDA_ADD_LIBRARY(test_lib
+# src/train_weights.cpp
+# src/test.cpp
+# src/cuda/ppf.cu
+# src/cuda/vector_ops.cu
+# src/cuda/kernel.cu
+# src/cuda/model.cu
+# src/cuda/book.cu
+# src/cuda/scene.cu
+# src/test.cu)
+# ADD_EXECUTABLE (test src/test.cpp)
 
 add_executable (alignment src/alignment.cpp)
+# set_property(TARGET alignment PROPERTY CXX_STANDARD 11)
 
-target_link_libraries (alignment alignment_lib ${PCL_LIBRARIES} ${CUDA_LIBRARIES} /opt/cuda/lib64/libcudadevrt.a )
+target_link_libraries (alignment alignment_lib ${PCL_LIBRARIES} ${CUDA_LIBRARIES} ${CUDADEVRT} ${CUDA_OPTIMIZE_LIB})
+# target_link_libraries (test test_lib ${PCL_LIBRARIES} ${CUDA_LIBRARIES} ${CUDADEVRT} ${CUDA_OPTIMIZE_LIB})
