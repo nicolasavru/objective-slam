@@ -28,7 +28,7 @@ __host__ __device__ float dot(float3 v1, float3 v2);
 __host__ __device__ float dot(float4 v1, float4 v2);
 __host__ __device__ float norm(float3 v);
 __host__ __device__ float norm(float4 v);
-__host__ __device__  float3 cross(float3 u, float3 v);
+__host__ __device__ float3 cross(float3 u, float3 v);
 __host__ __device__ float quant_downf(float x, float y);
 __host__ __device__ float4 disc_feature(float4 f, float d_dist, float d_angle);
 __host__ __device__ float3 discretize(float3 f, float d_dist);

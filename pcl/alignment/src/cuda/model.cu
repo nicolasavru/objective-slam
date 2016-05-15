@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <iterator>
 #include <stdio.h>
 #include <cuda.h>
 #include <cuda_runtime.h>                // Stops underlining of __global__
@@ -191,12 +193,18 @@ float Model::ScorePose(const float *weights, Eigen::Matrix4f truth,
                                   *(this->voteCounts),
                                   weight_vec);
 
-    thrust::device_vector<float> *vote_counts_out = ClusterTransformations();
-    thrust::sort_by_key(vote_counts_out->begin(),
-                        vote_counts_out->end(),
-                        thrust::device_ptr<struct float16>((struct float16 *) thrust::raw_pointer_cast(this->transformations.data())),
-                        thrust::greater<unsigned int>());
-    delete vote_counts_out;
+    // TODO: don't re-cluster transformations each time
+    thrust::device_vector<float> *dev_vote_counts_out = ClusterTransformations();
+    thrust::host_vector<float> vote_counts_out(*dev_vote_counts_out);
+    int max_idx = std::distance(vote_counts_out.begin(),
+                                std::max_element(vote_counts_out.begin(),
+                                                 vote_counts_out.end()));
+    // // TODO: replace sort with find max
+    // thrust::sort_by_key(vote_counts_out->begin(),
+    //                     vote_counts_out->end(),
+    //                     thrust::device_ptr<struct float16>((struct float16 *) thrust::raw_pointer_cast(this->transformations.data())),
+    //                     thrust::greater<unsigned int>());
+    delete dev_vote_counts_out;
 
     thrust::host_vector<float> transformations =
         thrust::host_vector<float>(this->getTransformations());
@@ -204,7 +212,7 @@ float Model::ScorePose(const float *weights, Eigen::Matrix4f truth,
     Eigen::Matrix4f T;
     for(int i=0; i<4; i++){
         for(int j=0; j<4; j++){
-            T(i,j) = transformations[16+i*4+j];
+            T(i,j) = transformations[16*max_idx+i*4+j];
         }
     }
 
@@ -224,36 +232,46 @@ float Model::ScorePose(const float *weights, Eigen::Matrix4f truth,
     return score;
 }
 
-thrust::device_vector<float> Model::OptimizeWeights(Scene *scene){
+thrust::device_vector<float> Model::OptimizeWeights(Scene *empty_scene,
+                                                    int num_iterations){
     MODEL_OBJ = this;
 
     float3 t;
     float4 r;
-    int num_iterations = 1;
 
-    thrust::device_vector<float> weight_vec, avg_weight_vec;
+    thrust::host_vector<float> avg_weight_vec(this->cloud_ptr->size());
 
     for(int i = 0; i < num_iterations; i++){
         t = (float3){0, 0, 0};
         r = (float4){0, 0, 0, 0};
         pcl::PointCloud<pcl::PointNormal> *new_scene_cloud =
             new pcl::PointCloud<pcl::PointNormal>();
-        TRUTH = GenerateSceneWithModel(*this->cloud_ptr, *scene->cloud_ptr, t, r,
+        TRUTH = GenerateSceneWithModel(*this->cloud_ptr, *empty_scene->cloud_ptr, t, r,
                                        *new_scene_cloud);
         Scene *new_scene = new Scene(new_scene_cloud);
         SCENE_OBJ = new_scene;
 
-        float *weights = optimize_weights(this->cloud_ptr->size());
+        ComputeUniqueVotes(new_scene);
+        ComputeTransformations(new_scene);
+
+        thrust::host_vector<float> weights(optimize_weights(this->cloud_ptr->size()));
         for(int j = 0; j < this->cloud_ptr->size(); j++){
-            fprintf(stdout, "weights[%d]: %f\n", j, weights[j]);
+            fprintf(stderr, "weights[%d]: %f\n", j, weights[j]);
+            avg_weight_vec[j] = (avg_weight_vec[j]*(i) + weights[j])/(i+1);
+            fprintf(stderr, "avg_weights[%d]: %f\n", j, avg_weight_vec[j]);
         }
         // thrust::device_ptr<float> weights_dev_ptr =
         //     thrust::device_pointer_cast<float>(weights);
-        thrust::device_vector<float> weight_vec =
-            thrust::device_vector<float>(weights,
-                                         weights+this->cloud_ptr->size());
+        // thrust::device_vector<float> weight_vec =
+        //     thrust::device_vector<float>(weights,
+        //                                  weights+this->cloud_ptr->size());
 
-        avg_weight_vec = weight_vec;
+        delete new_scene_cloud;
+        delete new_scene;
+    }
+    for(int k = 0; k < this->cloud_ptr->size(); k++){
+        fprintf(stderr, "avg_weights[%d]: %f\n", k, avg_weight_vec[k]);
+        fprintf(stdout, "avg_weights[%d]: %f\n", k, avg_weight_vec[k]);
     }
     return avg_weight_vec;
 }
@@ -275,7 +293,6 @@ void Model::ppf_lookup(Scene *scene){
     fprintf(stderr, "votes_size: %d\n", this->votes->size());
     /* DEBUG */
 
-    this->modelPointVoteWeights = OptimizeWeights(scene);
     this->weightedVoteCounts =
         ComputeWeightedVoteCounts(*(this->votes),
                                   *(this->voteCounts),

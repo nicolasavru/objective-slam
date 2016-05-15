@@ -18,6 +18,7 @@
 #include <pcl/registration/sample_consensus_prerejective.h>
 #include <pcl/segmentation/sac_segmentation.h>
 #include <pcl/visualization/pcl_visualizer.h>
+#include <pcl/visualization/point_cloud_color_handlers.h>
 #include <pcl/kdtree/kdtree_flann.h>
 #include <pcl/features/normal_3d.h>
 #include <pcl/filters/random_sample.h>
@@ -84,12 +85,13 @@ int main(int argc, char **argv){
     PointCloudT::Ptr object(new PointCloudT);
     PointCloudT::Ptr object_aligned(new PointCloudT);
     PointCloudT::Ptr scene(new PointCloudT);
+    PointCloudT::Ptr empty_scene(new PointCloudT);
     FeatureCloudT::Ptr object_features(new FeatureCloudT);
     FeatureCloudT::Ptr scene_features(new FeatureCloudT);
 
     // Get input object and scene
-    if (argc != 3){
-        pcl::console::print_error("Syntax is: %s object.ply scene.ply\n",
+    if (argc != 4){
+        pcl::console::print_error("Syntax is: %s object.ply scene.ply empty_scene.ply\n",
                 argv[0]);
         return (1);
     }
@@ -106,11 +108,18 @@ int main(int argc, char **argv){
         pcl::console::print_error("Error loading scene file!\n");
         return (1);
     }
+    pcl::console::print_highlight("Loading empty scene point cloud...\n");
+    if (pcl::io::loadPLYFile<PointNT>(argv[3], *empty_scene) < 0) {
+        pcl::console::print_error("Error loading scene file!\n");
+        return (1);
+    }
+
 
     // Downsample
     pcl::console::print_info("Downsampling...\n");
     int object_n = 2000;
     int scene_n = 1000;
+    int empty_scene_n = 1000;
     pcl::console::print_info("Object size before filtering: %u (%u x %u)\n",
                              object->size(), object-> width, object->height);
     object = sequentialDownsample<PointNT>(object, object_n);
@@ -124,6 +133,13 @@ int main(int argc, char **argv){
     // scene = voxelGridDownsample<PointNT>(scene, 0.075);
     pcl::console::print_info("Scene size after filtering: %u (%u x %u)\n",
                              scene->size(), scene-> width, scene->height);
+
+    pcl::console::print_info("Empty scene size before filtering: %u (%u x %u)\n",
+                             empty_scene->size(), empty_scene-> width, empty_scene->height);
+    empty_scene = sequentialDownsample<PointNT>(empty_scene, empty_scene_n);
+    // empty_scene = voxelGridDownsample<PointNT>(empty_scene, 0.075);
+    pcl::console::print_info("Empty scene size after filtering: %u (%u x %u)\n",
+                             empty_scene->size(), empty_scene-> width, empty_scene->height);
 
     // // Estimate normals for object
     // pcl::console::print_highlight("Estimating object normals...\n");
@@ -151,19 +167,8 @@ int main(int argc, char **argv){
 
     // Convert point clouds to arrays of float3.
     // TODO: Check for malloc errors
-    float3 *scene_points = (float3 *) malloc(scene->size()*sizeof(float3));
-    float3 *scene_normals = (float3 *) malloc(scene->size()*sizeof(float3));
     float3 *object_points = (float3 *) malloc(object->size()*sizeof(float3));
     float3 *object_normals = (float3 *) malloc(object->size()*sizeof(float3));
-
-    for (int i = 0; i < scene->size(); i++){
-        (scene_points+i)->x = scene->points[i].x;
-        (scene_points+i)->y = scene->points[i].y;
-        (scene_points+i)->z = scene->points[i].z;
-        (scene_normals+i)->x = scene->points[i].normal_x;
-        (scene_normals+i)->y = scene->points[i].normal_y;
-        (scene_normals+i)->z = scene->points[i].normal_z;
-    }
 
     for (int i = 0; i < object->size(); i++){
         (object_points+i)->x = object->points[i].x;
@@ -188,9 +193,27 @@ int main(int argc, char **argv){
     ptr_test_cu3(*test_cloud2);
     ptr_test_cu4(*test_cloud2);
     /* DEBUG */
-    Eigen::Matrix4f T = ply_load_main(test_cloud2, scene_points, scene_normals, scene->size(),
-                                      object.get(), object_points, object_normals, object->size(), 1);
+    float *model_weights = (float *)malloc(object->size()*sizeof(float));
+    Eigen::Matrix4f T = ply_load_main(scene.get(),
+                                      object.get(), object_points, object_normals, object->size(),
+                                      empty_scene.get(), 1, model_weights);
 
+    pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr color_cloud(new pcl::PointCloud<pcl::PointXYZRGBNormal>);
+    pcl::copyPointCloud(*object, *color_cloud);
+    for(int i = 0; i < object->size(); i++){
+        float weight = model_weights[i]/8;
+        uint8_t r = (uint8_t) (255*weight);
+        uint8_t g = (uint8_t) (165*weight);
+        uint8_t b = (uint8_t) (0*weight);
+        uint32_t rgb =
+            static_cast<uint32_t>(r) << 16 |
+            static_cast<uint32_t>(g) << 8  |
+            static_cast<uint32_t>(b);
+        (*color_cloud)[i].rgb = *reinterpret_cast<float *>(&rgb);
+        /* DEBUG */
+        fprintf(stderr, "rgb: %x, %u, %u, %u\n", rgb, r, g, b);
+        /* DEBUG */
+    }
     float3 t = {0, 0, 0};
     float4 r = {0, 0, 0, 0};
     // GenerateSceneWithModel(*object, *scene, t, r);
@@ -204,10 +227,14 @@ int main(int argc, char **argv){
     viewer->addPointCloud<PointNT>(scene, "scene");
     viewer->addPointCloudNormals<PointNT, PointNT>(scene, scene, 5, 0.05, "scene_normals");
 
-    ColorHandlerT red_color(object, 255, 0, 0);
-    viewer->addPointCloud<PointNT>(object, red_color, "object");
-    viewer->addPointCloudNormals<PointNT, PointNT>(object, object, 5, 0.05, "object_normals");
-    viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "object");
+    // ColorHandlerT red_color(object, 255, 0, 0);
+    // viewer->addPointCloud<PointNT>(object, red_color, "object");
+    // viewer->addPointCloudNormals<PointNT, PointNT>(object, object, 5, 0.05, "object_normals");
+    // viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "object");
+
+    pcl::visualization::PointCloudColorHandlerRGBField<pcl::PointXYZRGBNormal> rgb_color(color_cloud);
+    viewer->addPointCloud<pcl::PointXYZRGBNormal>(color_cloud, rgb_color, "color_cloud");
+    viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "color_cloud");
 
     ColorHandlerT green_color(object_aligned, 0, 255, 0);
     viewer->addPointCloud<PointNT>(object_aligned, green_color, "object_aligned");

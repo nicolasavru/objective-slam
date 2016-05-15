@@ -2,6 +2,7 @@
 #include <DE_Optimizer.h>
 #include <SolutionSet.h>
 #include <FitnessSet.h>
+#include <vector>
 
 #include "train_weights.h"
 
@@ -25,24 +26,24 @@ void myFitness(const CudaOptimize::SolutionSet *solset, CudaOptimize::FitnessSet
   fitset->set(fitnesses);
 }
 
-float *optimize_weights(int votes_size){
+std::vector<float> optimize_weights(int votes_size){
     /* DEBUG */
     fprintf(stderr, "num_points: %d\n", MODEL_OBJ->numPoints());
     /* DEBUG */
     // CudaOptimize::PSO_Optimizer p(&myFitness, MODEL_OBJ->numPoints(), 1, 64);
-    CudaOptimize::DE_Optimizer p(&myFitness, MODEL_OBJ->numPoints(), 1, 1024);
+    CudaOptimize::DE_Optimizer p(&myFitness, MODEL_OBJ->numPoints(), 1, 1536);
     float2 bounds = {0.0, 8.0};
     p.setBounds(bounds);
     p.setMutation(CudaOptimize::DE_TARGET_TO_BEST);
     // p.setCrossover(CudaOptimize::DE_EXPONENTIAL);
-    p.setF(0.4);
-    p.setCR(0.2);
-    p.setGenerations(5);
+    p.setF(0.5);
+    p.setCR(0.9);
+    p.setGenerations(10);
     p.optimize();
     float *myResults = p.getBestSolution();
     /* DEBUG */
-    fprintf(stderr, "myResults: %p\n", myResults);
     fprintf(stderr, "myResults[0]: %f\n", myResults[0]);
     /* DEBUG */
-    return myResults;
+    std::vector<float> optimal_weights(myResults, myResults + MODEL_OBJ->numPoints());
+    return optimal_weights;
 }

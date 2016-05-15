@@ -89,10 +89,10 @@ void ptr_test_cu4(const pcl::PointCloud<pcl::PointNormal> &scene_cloud){
 
 
 Eigen::Matrix4f ply_load_main(pcl::PointCloud<pcl::PointNormal> *scene_cloud_ptr,
-                              float3 *scenePoints, float3 *sceneNormals, int sceneN,
                               pcl::PointCloud<pcl::PointNormal> *object_cloud_ptr,
                               float3 *objectPoints, float3 *objectNormals, int objectN,
-                              int devUse){
+                              pcl::PointCloud<pcl::PointNormal> *empty_scene_cloud_ptr,
+                              int devUse, float *model_weights){
     /* DEBUG */
     fprintf(stderr, "foo1: %p, %d, %d\n", scene_cloud_ptr, scene_cloud_ptr->points.size(), scene_cloud_ptr->size());
     /* DEBUG */
@@ -116,17 +116,11 @@ Eigen::Matrix4f ply_load_main(pcl::PointCloud<pcl::PointNormal> *scene_cloud_ptr
     // thrust::device_vector<float3> foo(1024);
 
     // convert float3 * to thrust::host_vector<float3>
-    thrust::host_vector<float3> *scenePointsVec =
-            new thrust::host_vector<float3>(scenePoints, scenePoints+sceneN);
-    thrust::host_vector<float3> *sceneNormsVec =
-            new thrust::host_vector<float3>(sceneNormals, sceneNormals+sceneN);
     thrust::host_vector<float3> *objectPointsVec =
             new thrust::host_vector<float3>(objectPoints, objectPoints+objectN);
     thrust::host_vector<float3> *objectNormsVec =
             new thrust::host_vector<float3>(objectNormals, objectNormals+objectN);
 
-    free(scenePoints);
-    free(sceneNormals);
     free(objectPoints);
     free(objectNormals);
 
@@ -143,7 +137,10 @@ Eigen::Matrix4f ply_load_main(pcl::PointCloud<pcl::PointNormal> *scene_cloud_ptr
     fprintf(stderr, "foo0: %d\n", scene_cloud_ptr->points.size());
     /* DEBUG */
     Scene *scene = new Scene(scene_cloud_ptr);
+    Scene *empty_scene = new Scene(empty_scene_cloud_ptr);
 
+    thrust::host_vector<float> optimal_weights(model->OptimizeWeights(empty_scene, 4));
+    model->modelPointVoteWeights = thrust::device_vector<float>(optimal_weights);
     model->ppf_lookup(scene);
 
     // copy ppfs back to host
@@ -175,7 +172,12 @@ Eigen::Matrix4f ply_load_main(pcl::PointCloud<pcl::PointNormal> *scene_cloud_ptr
         }
     }
 
-
+    for(int i = 0; i < object_cloud_ptr->size(); i++){
+        model_weights[i] = optimal_weights[i];
+        // /* DEBUG */
+        // fprintf(stderr, "rgb: %f\n", model->modelPointVoteWeights[i]);
+        // /* DEBUG */
+    }
     // // Deallocate ram
     // delete points;
     // delete norms;

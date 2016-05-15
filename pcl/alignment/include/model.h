@@ -31,7 +31,7 @@ class Model : public Scene {
 
     float ScorePose(const float *weights, Eigen::Matrix4f truth,
                     pcl::PointCloud<pcl::PointNormal> scene);
-    thrust::device_vector<float> OptimizeWeights(Scene *scene);
+    thrust::device_vector<float> OptimizeWeights(Scene *scene, int num_iterations);
 
     void ppf_lookup(Scene *scene);
 
