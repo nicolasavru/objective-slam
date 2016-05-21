@@ -3,6 +3,8 @@
 #include <cuda_runtime.h>                // Stops underlining of __global__
 #include <pcl/point_types.h>
 #include <pcl/point_cloud.h>
+#include <pcl/common/distances.h>
+#include <pcl/common/geometry.h>
 #include <pcl/common/time.h>
 #include <pcl/console/print.h>
 #include <pcl/features/normal_3d_omp.h>
@@ -74,7 +76,14 @@ typename pcl::PointCloud<Point>::Ptr voxelGridDownsample(typename pcl::PointClou
 
 void ptr_test(pcl::PointCloud<pcl::PointNormal> *scene_cloud_ptr){
     /* DEBUG */
-    fprintf(stderr, "foo-1: %p, %d, %d\n", scene_cloud_ptr, scene_cloud_ptr->points.size(), scene_cloud_ptr->size());
+    fprintf(stderr, "foo-1: %p, %lu, %lu\n", scene_cloud_ptr, scene_cloud_ptr->points.size(), scene_cloud_ptr->size());
+}
+
+// Workaround for a bug in pcl::geometry::distance.
+template <typename PointT>
+inline float distance (const PointT& p1, const PointT& p2){
+    Eigen::Vector3f diff = p1.getVector3fMap() - p2.getVector3fMap();
+    return (diff.norm ());
 }
 
 // Align a rigid object to a scene with clutter and occlusions
@@ -85,6 +94,7 @@ int main(int argc, char **argv){
     PointCloudT::Ptr object(new PointCloudT);
     PointCloudT::Ptr object_aligned(new PointCloudT);
     PointCloudT::Ptr scene(new PointCloudT);
+    PointCloudT::Ptr scene_orig(new PointCloudT);
     PointCloudT::Ptr empty_scene(new PointCloudT);
     FeatureCloudT::Ptr object_features(new FeatureCloudT);
     FeatureCloudT::Ptr scene_features(new FeatureCloudT);
@@ -114,23 +124,32 @@ int main(int argc, char **argv){
         return (1);
     }
 
+    PointNT minPt, maxPt;
+    pcl::getMaxSegment(*object, minPt, maxPt);
+    float model_diam = distance(minPt, maxPt);
+    float d_dist = 0.035 * model_diam;
+    /* DEBUG */
+    fprintf(stderr, "model_diam, d_dist: %f, %f\n", model_diam, d_dist);
+    /* DEBUG */
 
     // Downsample
     pcl::console::print_info("Downsampling...\n");
-    int object_n = 2000;
-    int scene_n = 1000;
-    int empty_scene_n = 1000;
-    pcl::console::print_info("Object size before filtering: %u (%u x %u)\n",
+    int object_n = 50;
+    int scene_n = 50;
+    // int object_n = 1000;
+    // int scene_n = 500;
+    int empty_scene_n = 1000; pcl::console::print_info("Object size before filtering: %u (%u x %u)\n",
                              object->size(), object-> width, object->height);
-    object = sequentialDownsample<PointNT>(object, object_n);
-    // object = voxelGridDownsample<PointNT>(object, 0.03);
+    // object = sequentialDownsample<PointNT>(object, object_n);
+    object = voxelGridDownsample<PointNT>(object, d_dist);
     pcl::console::print_info("Object size after filtering: %u (%u x %u)\n",
                              object->size(), object-> width, object->height);
 
+    scene_orig = scene;
     pcl::console::print_info("Scene size before filtering: %u (%u x %u)\n",
                              scene->size(), scene-> width, scene->height);
-    scene = sequentialDownsample<PointNT>(scene, scene_n);
-    // scene = voxelGridDownsample<PointNT>(scene, 0.075);
+    // scene = sequentialDownsample<PointNT>(scene, scene_n);
+    scene = voxelGridDownsample<PointNT>(scene, d_dist);
     pcl::console::print_info("Scene size after filtering: %u (%u x %u)\n",
                              scene->size(), scene-> width, scene->height);
 
@@ -165,27 +184,13 @@ int main(int argc, char **argv){
 
     // CenterScene(*scene);
 
-    // Convert point clouds to arrays of float3.
-    // TODO: Check for malloc errors
-    float3 *object_points = (float3 *) malloc(object->size()*sizeof(float3));
-    float3 *object_normals = (float3 *) malloc(object->size()*sizeof(float3));
-
-    for (int i = 0; i < object->size(); i++){
-        (object_points+i)->x = object->points[i].x;
-        (object_points+i)->y = object->points[i].y;
-        (object_points+i)->z = object->points[i].z;
-        (object_normals+i)->x = object->points[i].normal_x;
-        (object_normals+i)->y = object->points[i].normal_y;
-        (object_normals+i)->z = object->points[i].normal_z;
-    }
-
     // MATLAB drost.m 59-63 model_description() and voting_scheme()
     // pass in object and scene, get back transformation matching object to scene
     pcl::PointCloud<pcl::PointNormal> test_cloud = pcl::PointCloud<pcl::PointNormal>(*scene);
     pcl::PointCloud<pcl::PointNormal> *test_cloud2 = new pcl::PointCloud<pcl::PointNormal>(*scene);
     /* DEBUG */
-    fprintf(stderr, "foo0: %p, %d, %d\n", scene.get(), scene.get()->points.size(), scene.get()->size());
-    fprintf(stderr, "foo0: %p, %d, %d\n", &test_cloud, (&test_cloud)->points.size(), (&test_cloud)->size());
+    fprintf(stderr, "foo0: %p, %lu, %lu\n", scene.get(), scene.get()->points.size(), scene.get()->size());
+    fprintf(stderr, "foo0: %p, %lu, %lu\n", &test_cloud, (&test_cloud)->points.size(), (&test_cloud)->size());
     // fprintf(stderr, "foo0: %p, %d, %d\n", test_cloud2, test_cloud2->points.size(), test_cloud2->size());
     ptr_test(test_cloud2);
     ptr_test_cu(test_cloud2);
@@ -194,9 +199,8 @@ int main(int argc, char **argv){
     ptr_test_cu4(*test_cloud2);
     /* DEBUG */
     float *model_weights = (float *)malloc(object->size()*sizeof(float));
-    Eigen::Matrix4f T = ply_load_main(scene.get(),
-                                      object.get(), object_points, object_normals, object->size(),
-                                      empty_scene.get(), 1, model_weights);
+    Eigen::Matrix4f T = ply_load_main(scene.get(), object.get(), empty_scene.get(),
+                                      d_dist, 1, model_weights);
 
     pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr color_cloud(new pcl::PointCloud<pcl::PointXYZRGBNormal>);
     pcl::copyPointCloud(*object, *color_cloud);
@@ -210,9 +214,9 @@ int main(int argc, char **argv){
             static_cast<uint32_t>(g) << 8  |
             static_cast<uint32_t>(b);
         (*color_cloud)[i].rgb = *reinterpret_cast<float *>(&rgb);
-        /* DEBUG */
-        fprintf(stderr, "rgb: %x, %u, %u, %u\n", rgb, r, g, b);
-        /* DEBUG */
+        // /* DEBUG */
+        // fprintf(stderr, "rgb: %x, %u, %u, %u\n", rgb, r, g, b);
+        // /* DEBUG */
     }
     float3 t = {0, 0, 0};
     float4 r = {0, 0, 0, 0};
@@ -224,8 +228,13 @@ int main(int argc, char **argv){
     boost::shared_ptr<pcl::visualization::PCLVisualizer> viewer(new pcl::visualization::PCLVisualizer ("3D Viewer"));
     viewer->setBackgroundColor(0, 0, 0);
 
-    viewer->addPointCloud<PointNT>(scene, "scene");
-    viewer->addPointCloudNormals<PointNT, PointNT>(scene, scene, 5, 0.05, "scene_normals");
+    // viewer->addPointCloud<PointNT>(scene_orig, "scene_orig");
+    // viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 0.5, "scene_orig");
+
+    ColorHandlerT blue_color(object, 0, 0, 255);
+    viewer->addPointCloud<PointNT>(scene, blue_color, "scene");
+    viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "scene");
+    viewer->addPointCloudNormals<PointNT, PointNT>(scene, scene, 1, 3, "scene_normals");
 
     // ColorHandlerT red_color(object, 255, 0, 0);
     // viewer->addPointCloud<PointNT>(object, red_color, "object");
@@ -239,7 +248,8 @@ int main(int argc, char **argv){
     ColorHandlerT green_color(object_aligned, 0, 255, 0);
     viewer->addPointCloud<PointNT>(object_aligned, green_color, "object_aligned");
     viewer->addPointCloudNormals<PointNT, PointNT>(object_aligned, object_aligned,
-                                                   5, 0.05, "object_aligned_normals");
+                                                   1, 3, "object_aligned_normals");
+    viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_COLOR, 1.0, 0.0, 0.0, "object_aligned_normals"); 
     viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "object_aligned");
 
     viewer->addCoordinateSystem (1.0, "foo", 0);

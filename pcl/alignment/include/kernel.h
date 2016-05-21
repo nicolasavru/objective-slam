@@ -15,8 +15,11 @@
 #define MIN(X,Y) ((X) < (Y) ? (X) : (Y))
 #define N_ANGLE 30
 #define D_ANGLE0 ((2.0f*float(CUDART_PI_F))/float(N_ANGLE))  //this one is for discretizing the feature in ppf_kernel
-#define D_DIST 0.035317969013662f  // generated based on MATLAB model_description.m:12, specifically for chair model
-#define TRANS_THRESH (0.5*D_DIST)
+// #define D_DIST 12.161478818129744
+// #define D_DIST 10
+// #define D_DIST 0.035317969013662f  // generated based on MATLAB model_description.m:12, specifically for chair model
+
+// #define TRANS_THRESH (2*D_DIST)
 #define ROT_THRESH (2*D_ANGLE0)
 #define SCORE_THRESHOLD 0
 
@@ -48,7 +51,8 @@ __host__ __device__ float4 homogenize(float3 v);
 __host__ __device__ float3 dehomogenize(float4 v);
 __host__ __device__ void invht(float T[4][4], float T_inv[4][4]);
 
-__global__ void ppf_kernel(float3 *points, float3 *norms, float4 *out, int count);
+__global__ void ppf_kernel(float3 *points, float3 *norms, float4 *out, int count,
+                           int ref_point_downsample_factor, float d_dist);
 
 __global__ void ppf_encode_kernel(float4 *ppfs, unsigned long *codes, int count);
 
@@ -65,7 +69,7 @@ __global__ void ppf_vote_kernel(unsigned int *sceneKeys, std::size_t *sceneIndic
                                 std::size_t *firstPPFIndex, std::size_t *key2ppfMap,
                                 float3 *modelPoints, float3 *modelNormals, int modelSize,
                                 float3 *scenePoints, float3 *sceneNormals, int sceneSize,
-                                unsigned long *votes, int count);
+                                unsigned long *votes, int count, float d_dist);
 
 __global__ void ppf_reduce_rows_kernel(unsigned long *votes, unsigned int *voteCounts,
                                        unsigned int *firstVoteIndex,
@@ -105,12 +109,12 @@ __global__ void rot_clustering_kernel(float3 *translations,
                                       // float3 *translations_out,
                                       // float4 *quaternions_out,
                                       float *vote_counts_out,
-                                      int count);
+                                      int count, float trans_thresh);
 
 __global__ void trans2idx_kernel(float3 *translations,
                                  unsigned int *trans_hash,
                                  unsigned int *adjacent_trans_hash,
-                                 int count);
+                                 int count, float d_dist);
 
 __global__ void vote_weight_kernel(unsigned long *votes, unsigned int *vote_counts,
                                    float *modelPointWeights, float *weightedVoteCounts,

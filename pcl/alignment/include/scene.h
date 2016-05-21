@@ -17,7 +17,7 @@ class Scene {
     public:
 
         Scene();
-        Scene(pcl::PointCloud<pcl::PointNormal> *cloud_ptr);
+        Scene(pcl::PointCloud<pcl::PointNormal> *cloud_ptr, float d_dist);
 
         ~Scene();
 
@@ -49,7 +49,10 @@ class Scene {
         //   should be used to find the index of desired hash key.
         thrust::device_vector<unsigned int> *hashKeys;
 
-        void initPPFs(thrust::host_vector<float3> *points, thrust::host_vector<float3> *normals, int n);
+    float d_dist;
+
+    void initPPFs(thrust::host_vector<float3> *points, thrust::host_vector<float3> *normals, int n,
+                  float d_dist, int ref_point_downsample_factor=1);
 };
 
 

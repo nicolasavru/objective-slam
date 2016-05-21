@@ -356,7 +356,8 @@ __device__ void compute_transforms(unsigned int angle_idx, float3 m_r,
     mat4f_mul(T_tmp2, T_m_g, T_arr);
 }
 
-__global__ void ppf_kernel(float3 *points, float3 *norms, float4 *out, int count){
+__global__ void ppf_kernel(float3 *points, float3 *norms, float4 *out, int count,
+                           int ref_point_downsample_factor, float d_dist){
     if(count <= 1) return;
 
     int ind = threadIdx.x;
@@ -382,6 +383,12 @@ __global__ void ppf_kernel(float3 *points, float3 *norms, float4 *out, int count
             __syncthreads();
 
             for(int j = 0; j < bound; j++) {
+
+                if(idx % ref_point_downsample_factor != 0){
+                    out[idx*count + j + i].x = CUDART_NAN_F;
+                    continue;
+                };
+
                 // MATLAB model_description.m:31
                 // handle case of identical points in pair
                 if((j + i - idx) == 0){
@@ -396,7 +403,7 @@ __global__ void ppf_kernel(float3 *points, float3 *norms, float4 *out, int count
                 }
                 out[idx*count + j + i] = ppf;
                 // MATLAB model_description.m:42
-                out[idx*count + j + i] = disc_feature(out[idx*count + j + i], D_DIST, D_ANGLE0);
+                out[idx*count + j + i] = disc_feature(out[idx*count + j + i], d_dist, D_ANGLE0);
             }
         }
         //grid stride
@@ -462,7 +469,7 @@ __global__ void ppf_vote_kernel(unsigned int *sceneKeys, std::size_t *sceneIndic
                                 std::size_t *firstPPFIndex, std::size_t *key2ppfMap,
                                 float3 *modelPoints, float3 *modelNormals, int modelSize,
                                 float3 *scenePoints, float3 *sceneNormals, int sceneSize,
-                                unsigned long *votes_old, int count){
+                                unsigned long *votes_old, int count, float d_dist){
     if(count <= 1) return;
 
     int ind = threadIdx.x;
@@ -506,8 +513,10 @@ __global__ void ppf_vote_kernel(unsigned int *sceneKeys, std::size_t *sceneIndic
 
             trans_model_scene(model_r_point, model_r_norm, model_i_point,
                               scene_r_point, scene_r_norm, scene_i_point,
-                              D_DIST, alpha_idx);
-            votes_old[idx*modelSize + i] =
+                              d_dist, alpha_idx);
+            // votes_old[idx*modelSize + i] =
+            //     (((unsigned long) scene_r_index) << 32) | (model_r_index << 6) | (alpha_idx);
+            votes_old[idx*100 + i] =
                 (((unsigned long) scene_r_index) << 32) | (model_r_index << 6) | (alpha_idx);
         }
 
@@ -579,7 +588,6 @@ __global__ void trans_calc_kernel(unsigned int *uniqueSceneRefPts,
     int idx = ind + blockIdx.x * blockDim.x;
 
     unsigned int angle_idx, model_point_idx, scene_point_idx;
-    unsigned long vote;
 
     unsigned int low6 = ((unsigned int) -1) >> 26;
     // unsigned long hi32 = ((unsigned long) -1) << 32;
@@ -670,7 +678,7 @@ __global__ void mat2transquat_kernel(float *transformations,
 __global__ void trans2idx_kernel(float3 *translations,
                                  unsigned int *trans_hash,
                                  unsigned int *adjacent_trans_hash,
-                                 int count){
+                                 int count, float d_dist){
     if(count <= 1) return;
 
     int ind = threadIdx.x;
@@ -679,18 +687,18 @@ __global__ void trans2idx_kernel(float3 *translations,
     int3 adjacent_norm_disc_trans;
 
     while(idx < count){
-        float3 disc_trans = discretize(translations[idx], D_DIST);
-        norm_disc_trans.x = (int) (disc_trans.x / D_DIST);
-        norm_disc_trans.y = (int) (disc_trans.y / D_DIST);
-        norm_disc_trans.z = (int) (disc_trans.z / D_DIST);
+        float3 disc_trans = discretize(translations[idx], d_dist);
+        norm_disc_trans.x = (int) (disc_trans.x / d_dist);
+        norm_disc_trans.y = (int) (disc_trans.y / d_dist);
+        norm_disc_trans.z = (int) (disc_trans.z / d_dist);
         // Maybe replace hash with bitpacking an unsigned long.
         trans_hash[idx] = hash(&norm_disc_trans, sizeof(int3));
         for(int i = -1, c = 0; i < 2; i++){
             for(int j = -1; j < 2; j++){
                 for(int k = -1; k < 2; k++, c++){
                     // THIS IS WRONG, BUT IT MAKES IT WORK
-                    if(i == j == k == 0){
-                    // if(i == 0 && j == 0 && k == 0){
+                    // if(i == j == k == 0){
+                    if(i == 0 && j == 0 && k == 0){
                         adjacent_trans_hash[27*idx+c] = 0;
                         continue;
                     }
@@ -780,21 +788,21 @@ __global__ void rot_clustering_kernel(float3 *translations,
                                       // float3 *translations_out,
                                       // float4 *quaternions_out,
                                       float *vote_counts_out,
-                                      int count){
+                                      int count, float trans_thresh){
     if(count <= 1) return;
 
     int ind = threadIdx.x;
     int idx = ind + blockIdx.x * blockDim.x;
-    int bound;
+
+    float rot_thresh_sq = ROT_THRESH*ROT_THRESH;
 
     while(idx < count) {
-        __shared__ float3 Strans[BLOCK_SIZE/2];
-        __shared__ float4 Squat[BLOCK_SIZE/2];
-        __shared__ unsigned int Svotecounts[BLOCK_SIZE/2];
+        // __shared__ float3 Strans[BLOCK_SIZE/2];
+        // __shared__ float4 Squat[BLOCK_SIZE/2];
+        // __shared__ unsigned int Svotecounts[BLOCK_SIZE/2];
 
         float3 thisTrans = translations[idx];
         float4 thisQuat  = quaternions[idx];
-        unsigned int thisVoteCountOut = vote_counts[idx];
         for(int adjacent_block = 0; adjacent_block < 27; adjacent_block++){
             // printf("27*idx: %u, %u, %d\n", 27*idx, idx, count);
             unsigned int thisAdjacentHash = adjacent_trans_hash[27*idx+adjacent_block];
@@ -805,6 +813,8 @@ __global__ void rot_clustering_kernel(float3 *translations,
                ){
                 // idx += blockDim.x * gridDim.x;
                 // printf("skipping vote_counts_idx[%u]\n", idx);
+                // printf("thishash, adjhash: %u, %u\n", thisAdjacentHash, transKeys[thisAdjacentHashIndex]);
+                // vote_counts_out[idx] = thisAdjacentHash == 0 ? -1.0 : -2.0;
                 continue;
             }
             // printf("thisAdjacentHash[%u]: %u\n", 27*idx+adjacent_block, thisAdjacentHash);
@@ -813,20 +823,15 @@ __global__ void rot_clustering_kernel(float3 *translations,
             unsigned int thisFirstTransIndex = firstTransIndex[thisAdjacentHashIndex];
 
             for(int j = 0; j < thisTransCount; j++){
+                unsigned int thisTransIndex = key2transMap[thisFirstTransIndex+j];
                 float normDiffTrans =
-                    norm(thisTrans - 
-                         translations[key2transMap[thisFirstTransIndex+j]]);
-                // TODO: square the threshold instead of sqrting here
-                float quatDiff =
-                    sqrt(fabsf(8*(1-dot(thisQuat,
-                                        quaternions[key2transMap[thisFirstTransIndex+j]]))));
-                // printf("starting on vote_counts_idx[%u], %f, %f\n", idx, normDiffTrans, quatDiff);
-                if((normDiffTrans < TRANS_THRESH) && (quatDiff < ROT_THRESH)){
-                    // thisVoteCountOut += Svotecounts[j];
-                    // thisVoteCountOut = 1;
-                    // vote_counts_out[idx] += Svotecounts[j];
-                    vote_counts_out[idx] += vote_counts[key2transMap[thisFirstTransIndex+j]];
-                    // printf("vote_counts_idx[%u]: %u\n", idx, vote_counts_out[idx]);
+                    norm(thisTrans - translations[thisTransIndex]);
+                if(normDiffTrans < trans_thresh){
+                    float quatDiff =
+                        fabsf(8*(1-dot(thisQuat, quaternions[thisTransIndex])));
+                    if(quatDiff < rot_thresh_sq){
+                        vote_counts_out[idx] += vote_counts[thisTransIndex];
+                    }
                 }
             }
         }

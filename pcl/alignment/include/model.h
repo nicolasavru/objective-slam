@@ -16,8 +16,7 @@
 class Model : public Scene {
 
   public:
-    Model(pcl::PointCloud<pcl::PointNormal> *cloud,
-          thrust::host_vector<float3>*points, thrust::host_vector<float3> *normals, int n);
+    Model(pcl::PointCloud<pcl::PointNormal> *cloud, float d_dist);
     ~Model();
 
     void SetModelPointVoteWeights(thrust::device_vector<float> modelPointVoteWeights);

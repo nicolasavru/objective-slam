@@ -90,9 +90,8 @@ void ptr_test_cu4(const pcl::PointCloud<pcl::PointNormal> &scene_cloud){
 
 Eigen::Matrix4f ply_load_main(pcl::PointCloud<pcl::PointNormal> *scene_cloud_ptr,
                               pcl::PointCloud<pcl::PointNormal> *object_cloud_ptr,
-                              float3 *objectPoints, float3 *objectNormals, int objectN,
                               pcl::PointCloud<pcl::PointNormal> *empty_scene_cloud_ptr,
-                              int devUse, float *model_weights){
+                              float d_dist, int devUse, float *model_weights){
     /* DEBUG */
     fprintf(stderr, "foo1: %p, %d, %d\n", scene_cloud_ptr, scene_cloud_ptr->points.size(), scene_cloud_ptr->size());
     /* DEBUG */
@@ -115,15 +114,6 @@ Eigen::Matrix4f ply_load_main(pcl::PointCloud<pcl::PointNormal> *scene_cloud_ptr
     fprintf(stderr, "Using device %d, %s: \n", devNum, prop.name);
     // thrust::device_vector<float3> foo(1024);
 
-    // convert float3 * to thrust::host_vector<float3>
-    thrust::host_vector<float3> *objectPointsVec =
-            new thrust::host_vector<float3>(objectPoints, objectPoints+objectN);
-    thrust::host_vector<float3> *objectNormsVec =
-            new thrust::host_vector<float3>(objectNormals, objectNormals+objectN);
-
-    free(objectPoints);
-    free(objectNormals);
-
     // cuda setup
     int blocks = prop.multiProcessorCount;
     /* DEBUG */
@@ -131,16 +121,19 @@ Eigen::Matrix4f ply_load_main(pcl::PointCloud<pcl::PointNormal> *scene_cloud_ptr
     /* DEBUG */
 
     // build model description
-    Model *model = new Model(object_cloud_ptr, objectPointsVec, objectNormsVec, objectN);
+    Model *model = new Model(object_cloud_ptr, d_dist);
 
     /* DEBUG */
     fprintf(stderr, "foo0: %d\n", scene_cloud_ptr->points.size());
     /* DEBUG */
-    Scene *scene = new Scene(scene_cloud_ptr);
-    Scene *empty_scene = new Scene(empty_scene_cloud_ptr);
+    Scene *scene = new Scene(scene_cloud_ptr, d_dist);
+    Scene *empty_scene = new Scene(empty_scene_cloud_ptr, d_dist);
 
-    thrust::host_vector<float> optimal_weights(model->OptimizeWeights(empty_scene, 4));
-    model->modelPointVoteWeights = thrust::device_vector<float>(optimal_weights);
+    // thrust::host_vector<float> optimal_weights(model->OptimizeWeights(empty_scene, 4));
+    // model->modelPointVoteWeights = thrust::device_vector<float>(optimal_weights);
+    for(int i = 0; i < object_cloud_ptr->size(); i++){
+        model_weights[i] = model->modelPointVoteWeights[i];
+    }
     model->ppf_lookup(scene);
 
     // copy ppfs back to host
@@ -152,6 +145,9 @@ Eigen::Matrix4f ply_load_main(pcl::PointCloud<pcl::PointNormal> *scene_cloud_ptr
     // write out transformations
     // (*maxval)[0] is all the unallocated votes
     float threshold = 0.8 * (*maxval)[1];
+    /* DEBUG */
+    fprintf(stderr, "threshold: %f\n", threshold);
+    /* DEBUG */
     for (int i=1; (*maxval)[i] > threshold; i++){
        cout << "num_votes: " << (*maxval)[i] << endl;
        cout << "transforms(:,:," << i << ") = [";
@@ -172,12 +168,6 @@ Eigen::Matrix4f ply_load_main(pcl::PointCloud<pcl::PointNormal> *scene_cloud_ptr
         }
     }
 
-    for(int i = 0; i < object_cloud_ptr->size(); i++){
-        model_weights[i] = optimal_weights[i];
-        // /* DEBUG */
-        // fprintf(stderr, "rgb: %f\n", model->modelPointVoteWeights[i]);
-        // /* DEBUG */
-    }
     // // Deallocate ram
     // delete points;
     // delete norms;
