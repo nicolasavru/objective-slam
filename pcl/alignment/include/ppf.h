@@ -17,9 +17,9 @@ void ptr_test_cu2(pcl::PointCloud<pcl::PointNormal> scene_cloud_ptr);
 void ptr_test_cu3(pcl::PointCloud<pcl::PointNormal> &scene_cloud);
 void ptr_test_cu4(const pcl::PointCloud<pcl::PointNormal> &scene_cloud);
 
-Eigen::Matrix4f ply_load_main(pcl::PointCloud<pcl::PointNormal> *scene_cloud,
-                              pcl::PointCloud<pcl::PointNormal> *object_cloud_ptr,
-                              pcl::PointCloud<pcl::PointNormal> *empty_scene_cloud_ptr,
-                              float d_dist, int devUse, float *model_weights);
+Eigen::Matrix4f ppf_registration(pcl::PointCloud<pcl::PointNormal> *scene_cloud,
+                                 pcl::PointCloud<pcl::PointNormal> *object_cloud_ptr,
+                                 std::vector<pcl::PointCloud<pcl::PointNormal>::Ptr> empty_cloud_vec,
+                                 float d_dist, int devUse, float *model_weights);
 
 #endif /* __PPF_H */

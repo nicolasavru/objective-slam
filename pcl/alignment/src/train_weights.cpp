@@ -30,7 +30,7 @@ std::vector<float> optimize_weights(int votes_size){
     /* DEBUG */
     fprintf(stderr, "num_points: %d\n", MODEL_OBJ->numPoints());
     /* DEBUG */
-    // CudaOptimize::PSO_Optimizer p(&myFitness, MODEL_OBJ->numPoints(), 1, 64);
+    // MODEL_OBJ->numPoints() must be <= 1024 (IOptimzer.cpp:83)
     CudaOptimize::DE_Optimizer p(&myFitness, MODEL_OBJ->numPoints(), 1, 1536);
     float2 bounds = {0.0, 8.0};
     p.setBounds(bounds);
@@ -39,11 +39,9 @@ std::vector<float> optimize_weights(int votes_size){
     p.setF(0.5);
     p.setCR(0.9);
     p.setGenerations(10);
+    // p.setVerbosity(logDEBUG4);
     p.optimize();
     float *myResults = p.getBestSolution();
-    /* DEBUG */
-    fprintf(stderr, "myResults[0]: %f\n", myResults[0]);
-    /* DEBUG */
     std::vector<float> optimal_weights(myResults, myResults + MODEL_OBJ->numPoints());
     return optimal_weights;
 }

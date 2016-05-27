@@ -95,6 +95,8 @@ set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS};--ftz=true;--prec-div=false;--prec-sqrt=f
 set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS} -Xcudafe "--diag_suppress=boolean_controlling_expr_is_constant")
 set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS} -I/home/avru/Documents/Senior_Project/thrust )
 
+set(CUDA_SEPARABLE_COMPILATION ON)
+
 # set(CUDA_64_BIT_DEVICE_CODE ON)
 
 CUDA_ADD_LIBRARY(alignment_lib ${cuda} ${srcs})

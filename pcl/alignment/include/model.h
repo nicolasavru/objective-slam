@@ -27,10 +27,12 @@ class Model : public Scene {
                               thrust::device_vector<float> modelpoint_vote_weights);
     void ComputeTransformations(Scene *scene);
     thrust::device_vector<float> *ClusterTransformations();
+    thrust::device_vector<float> *ClusterTransformationsCPU();
 
     float ScorePose(const float *weights, Eigen::Matrix4f truth,
                     pcl::PointCloud<pcl::PointNormal> scene);
-    thrust::device_vector<float> OptimizeWeights(Scene *scene, int num_iterations);
+    thrust::device_vector<float> OptimizeWeights
+    (std::vector<pcl::PointCloud<pcl::PointNormal>::Ptr> empty_cloud_vec, int num_iterations);
 
     void ppf_lookup(Scene *scene);
 

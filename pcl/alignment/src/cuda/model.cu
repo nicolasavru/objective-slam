@@ -24,20 +24,19 @@
 #include "impl/scene_generation.hpp"
 #include "kernel.h"
 #include "book.h"
-
+#include "transformation_clustering.h"
 
 // This must be here, as opposed to in train_weights.cpp, due to linking issues.
 Model *MODEL_OBJ;
 Scene *SCENE_OBJ;
 Eigen::Matrix4f TRUTH;
 
-struct is_nonzero
-{
-  __host__ __device__
-  bool operator()(const float x)
-  {
-    return x != 0;
-  }
+
+template <int value>
+struct is_greaterthan{
+    __host__ __device__ bool operator()(const unsigned int x){
+        return x > value;
+    }
 };
 
 struct high_32_bits : public thrust::unary_function<unsigned long,unsigned int>{
@@ -46,7 +45,6 @@ struct high_32_bits : public thrust::unary_function<unsigned long,unsigned int>{
         return (unsigned int) (i >> 32);
     }
 };
-
 
 struct low_32_bits : public thrust::unary_function<unsigned long,unsigned int>{
     __host__ __device__
@@ -79,6 +77,27 @@ Model::Model(pcl::PointCloud<pcl::PointNormal> *cloud, float d_dist){
     this->initPPFs(points, normals, cloud_ptr->size(), d_dist);
     this->modelPointVoteWeights = thrust::device_vector<float>(n, 1.0);
 
+    // thrust::host_vector<float3> *host_model_normals =
+    //     new thrust::host_vector<float3>(*this->modelNormals);
+    // for(int i = 0; i < host_model_normals->size(); i++){
+    //     /* DEBUG */
+    //     fprintf(stdout, "host_model_modelnormals[%u]: %f, %f, %f,\n", i,
+    //             (*host_model_normals)[i].x, (*host_model_normals)[i].y, (*host_model_normals)[i].z);
+    //     /* DEBUG */
+    // }
+
+
+    // thrust::host_vector<float4> *host_model_modelppfs =
+    //     new thrust::host_vector<float4>(*this->modelPPFs);
+    // for(int i = 0; i < host_model_modelppfs->size(); i++){
+    //     /* DEBUG */
+    //     fprintf(stdout, "host_model_modelppfs[%u]: %f, %f, %f, %f\n", i,
+    //             (*host_model_modelppfs)[i].x, (*host_model_modelppfs)[i].y, (*host_model_modelppfs)[i].z,
+    //             (*host_model_modelppfs)[i].w);
+    //     /* DEBUG */
+    // }
+
+
     // For each element of data, compute a 32-bit hash,
     thrust::device_vector<unsigned int> nonunique_hashkeys =
         thrust::device_vector<unsigned int>(this->modelPPFs->size());
@@ -86,6 +105,15 @@ Model::Model(pcl::PointCloud<pcl::PointNormal> *cloud, float d_dist){
     ppf_hash_kernel<<<blocks,BLOCK_SIZE>>>(RAW_PTR(this->modelPPFs),
                                            thrust::raw_pointer_cast(nonunique_hashkeys.data()),
                                            this->modelPPFs->size());
+
+    // thrust::host_vector<std::size_t> *host_model_nnh =
+    //     new thrust::host_vector<std::size_t>(nonunique_hashkeys);
+    // for(int i = 0; i < host_model_nnh->size(); i++){
+    //     /* DEBUG */
+    //     fprintf(stdout, "host_model_nnh[%u]: %u\n", i, (*host_model_nnh)[i]);
+    //     /* DEBUG */
+    // }
+
     HANDLE_ERROR(cudaPeekAtLastError());
     HANDLE_ERROR(cudaDeviceSynchronize());
     this->search_array = ParallelHashArray<unsigned int>(nonunique_hashkeys);
@@ -102,19 +130,42 @@ void Model::SetModelPointVoteWeights(thrust::device_vector<float> modelPointVote
 }
 
 void Model::ComputeUniqueVotes(Scene *scene){
-    std::size_t num_nonzero_hashes = thrust::count_if
-        (scene->getHashKeys()->begin(), scene->getHashKeys()->end(), is_nonzero());
-    /* DEBUG */
-    fprintf(stderr, "nnhs: %lu\n", num_nonzero_hashes);
-    /* DEBUG */
-
-    // thrust::device_vector<unsigned long> *nonunique_votes = new thrust::device_vector<unsigned long>(scene->getModelPPFs()->size()*this->modelPoints->size(),0);
-    thrust::device_vector<unsigned long> *nonunique_votes = new thrust::device_vector<unsigned long>(scene->getModelPPFs()->size()*100,0);
-    fprintf(stderr, "blargh1\n");
     thrust::device_vector<std::size_t> *sceneIndices =
         this->search_array.GetIndices(*(scene->getHashKeys()));
 
+    thrust::device_vector<std::size_t> *ppf_vote_counts =
+        new thrust::device_vector<unsigned long>(scene->getHashKeys()->size());
     int blocks = std::min(((int)(scene->getHashKeys()->size()) + BLOCK_SIZE - 1) / BLOCK_SIZE, MAX_NBLOCKS);
+    ppf_vote_count_kernel<<<blocks,BLOCK_SIZE>>>
+        (RAW_PTR(scene->getHashKeys()), RAW_PTR(sceneIndices),
+         RAW_PTR(this->search_array.GetHashkeys()), RAW_PTR(this->search_array.GetCounts()),
+         RAW_PTR(ppf_vote_counts), scene->getHashKeys()->size());
+    HANDLE_ERROR(cudaPeekAtLastError());
+    HANDLE_ERROR(cudaDeviceSynchronize());
+
+    thrust::device_vector<std::size_t> *ppf_vote_indices =
+        new thrust::device_vector<std::size_t>(scene->getHashKeys()->size());
+    thrust::exclusive_scan(ppf_vote_counts->begin(),
+                           ppf_vote_counts->end(),
+                           ppf_vote_indices->begin());
+
+    // TODO: don't copy the entire vector for just the last element
+    thrust::host_vector<std::size_t> *host_ppf_vote_counts =
+        new thrust::host_vector<std::size_t>(*ppf_vote_counts);
+    thrust::host_vector<std::size_t> *host_ppf_vote_indices =
+        new thrust::host_vector<std::size_t>(*ppf_vote_indices);
+
+    std::size_t num_votes = host_ppf_vote_counts->back() + host_ppf_vote_indices->back();
+    fprintf(stderr, "num_nonunique_votes: %lu\n", num_votes);
+
+    delete ppf_vote_counts;
+    delete host_ppf_vote_counts;
+    delete host_ppf_vote_indices;
+
+    thrust::device_vector<unsigned long> *nonunique_nonempty_votes =
+        new thrust::device_vector<unsigned long>(num_votes);
+
+    blocks = std::min(((int)(scene->getHashKeys()->size()) + BLOCK_SIZE - 1) / BLOCK_SIZE, MAX_NBLOCKS);
     ppf_vote_kernel<<<blocks,BLOCK_SIZE>>>
         (RAW_PTR(scene->getHashKeys()), RAW_PTR(sceneIndices),
          RAW_PTR(this->search_array.GetHashkeys()), RAW_PTR(this->search_array.GetCounts()),
@@ -123,27 +174,42 @@ void Model::ComputeUniqueVotes(Scene *scene){
          RAW_PTR(this->modelPoints), RAW_PTR(this->modelNormals),
          this->n, RAW_PTR(scene->getModelPoints()),
          RAW_PTR(scene->getModelNormals()), scene->numPoints(),
-         RAW_PTR(nonunique_votes),
+         RAW_PTR(ppf_vote_indices),
+         RAW_PTR(nonunique_nonempty_votes),
          scene->getHashKeys()->size(),
          this->d_dist);
-
-    // Unfortunately std::back_inserter doesn't work with CUDA 6.5.
-    std::size_t num_nonunique_nonempty_votes = thrust::count_if
-        (nonunique_votes->begin(), nonunique_votes->end(), is_nonzero());
-    /* DEBUG */
-    fprintf(stderr, "nnnv: %lu\n", num_nonunique_nonempty_votes);
-    /* DEBUG */
-    thrust::device_vector<unsigned long> *nonunique_nonempty_votes =
-        new thrust::device_vector<unsigned long>(num_nonunique_nonempty_votes,0);
-    thrust::copy_if(nonunique_votes->begin(), nonunique_votes->end(),
-                    nonunique_nonempty_votes->begin(), is_nonzero());
-    delete nonunique_votes;
+    HANDLE_ERROR(cudaPeekAtLastError());
+    HANDLE_ERROR(cudaDeviceSynchronize());
+    delete ppf_vote_indices;
 
     thrust::sort(nonunique_nonempty_votes->begin(), nonunique_nonempty_votes->end());
     this->votes = new thrust::device_vector<unsigned long>();
     this->voteCounts = new thrust::device_vector<unsigned int>();
     histogram_destructive(*nonunique_nonempty_votes, *(this->votes), *(this->voteCounts));
+    /* DEBUG */
+    fprintf(stderr, "num_unique_votes: %lu\n", this->votes->size());
+    /* DEBUG */
     delete nonunique_nonempty_votes;
+
+    thrust::sort_by_key(this->voteCounts->begin(),
+                        this->voteCounts->end(),
+                        this->votes->begin(),
+                        thrust::greater<float>());
+
+    std::size_t num_top_votes = thrust::count_if
+        (voteCounts->begin(), voteCounts->end(), is_greaterthan<10>());
+    /* DEBUG */
+    fprintf(stderr, "num_top_votes: %lu\n", num_top_votes);
+    /* DEBUG */
+    this->votes->resize(num_top_votes);
+    this->voteCounts->resize(num_top_votes);
+
+    thrust::host_vector<unsigned int> temp_votecounts(*this->voteCounts);
+    /* DEBUG */
+    fprintf(stderr, "1, 5, 10, 50: %u, %u, %u, %u\n",
+            temp_votecounts[1], temp_votecounts[5],
+            temp_votecounts[10], temp_votecounts[50]);
+    /* DEBUG */
 }
 
 thrust::device_vector<float>
@@ -180,18 +246,12 @@ thrust::device_vector<float> *Model::ClusterTransformations(){
         thrust::device_vector<float3>(this->votes->size());
     thrust::device_vector<float4> transformation_rots =
         thrust::device_vector<float4>(this->votes->size());
-    /* DEBUG */
-    fprintf(stderr, "aaa\n");
-    /* DEBUG */
     int blocks = std::min(((int)(this->votes->size()) + BLOCK_SIZE - 1) / BLOCK_SIZE, MAX_NBLOCKS);
     mat2transquat_kernel<<<blocks,BLOCK_SIZE>>>
         (thrust::raw_pointer_cast(this->transformations.data()),
          thrust::raw_pointer_cast(transformation_trans.data()),
          thrust::raw_pointer_cast(transformation_rots.data()),
          this->votes->size());
-    /* DEBUG */
-    fprintf(stderr, "bbb\n");
-    /* DEBUG */
     thrust::device_vector<unsigned int> nonunique_trans_hash =
         thrust::device_vector<unsigned int>(this->votes->size());
     thrust::device_vector<unsigned int> adjacent_trans_hash =
@@ -201,22 +261,11 @@ thrust::device_vector<float> *Model::ClusterTransformations(){
      thrust::raw_pointer_cast(nonunique_trans_hash.data()),
      thrust::raw_pointer_cast(adjacent_trans_hash.data()),
      this->votes->size(), this->d_dist);
-    /* DEBUG */
-    fprintf(stderr, "ccc\n");
-    /* DEBUG */
     ParallelHashArray<unsigned int> trans_search_array =
         ParallelHashArray<unsigned int>(nonunique_trans_hash);
 
-    // write_device_vector("adjacent_trans_hash", adjacent_trans_hash);
-    // write_device_vector("transCount", transCount);
-    /* DEBUG */
-    fprintf(stderr, "ddd\n");
-    /* DEBUG */
     thrust::device_vector<std::size_t> *transIndices =
         trans_search_array.GetIndices(adjacent_trans_hash);
-    /* DEBUG */
-    fprintf(stderr, "eee\n");
-    /* DEBUG */
     thrust::device_vector<float> *vote_counts_out =
         new thrust::device_vector<float>(this->weightedVoteCounts.size());
     blocks = std::min(((int)(this->votes->size()) + BLOCK_SIZE - 1) / BLOCK_SIZE, MAX_NBLOCKS);
@@ -232,17 +281,46 @@ thrust::device_vector<float> *Model::ClusterTransformations(){
          thrust::raw_pointer_cast(vote_counts_out->data()),
          this->votes->size(), 2*this->d_dist);
     delete transIndices;
-    /* DEBUG */
-    fprintf(stderr, "fff\n");
-    /* DEBUG */
-    // thrust::host_vector<float>host_wvotecounts(*vote_counts_out);
-    // for(int i = 0; i < this->weightedVoteCounts.size(); i++){
-    //     /* DEBUG */
-    //     fprintf(stderr, "vote_counts_out[%d]: %f\n", i, host_wvotecounts[i]);
-    //     /* DEBUG */
-    // }
-
     return vote_counts_out;
+}
+
+thrust::device_vector<float> *Model::ClusterTransformationsCPU(){
+    thrust::host_vector<float> transformations(this->transformations);
+    thrust::host_vector<float> vote_counts(*this->voteCounts);
+    PoseWithVotesList transformations_list = PoseWithVotesList();
+    for(int i = 0; i < this->votes->size(); i++){
+        Eigen::Affine3f transmat;
+        float vote_count = (float) vote_counts[i];
+        memcpy(transmat.data(), transformations.data()+ 16*i, 16*sizeof(float));
+        transformations_list.push_back(PoseWithVotes(transmat, vote_count));
+    }
+
+    PoseWithVotesList clustered_transformations_list = PoseWithVotesList();
+    clusterPoses(transformations_list, clustered_transformations_list,
+                 3*this->d_dist, D_ANGLE0);
+
+    thrust::device_vector<float> *foo = new thrust::device_vector<float>();
+    return foo;
+
+
+    // thrust::device_vector<float3> transformation_trans =
+    //     thrust::device_vector<float3>(this->votes->size());
+    // thrust::device_vector<float4> transformation_rots =
+    //     thrust::device_vector<float4>(this->votes->size());
+    // /* DEBUG */
+    // fprintf(stderr, "aaa\n");
+    // /* DEBUG */
+    // int blocks = std::min(((int)(this->votes->size()) + BLOCK_SIZE - 1) / BLOCK_SIZE, MAX_NBLOCKS);
+    // mat2transquat_kernel<<<blocks,BLOCK_SIZE>>>
+    //     (thrust::raw_pointer_cast(this->transformations.data()),
+    //      thrust::raw_pointer_cast(transformation_trans.data()),
+    //      thrust::raw_pointer_cast(transformation_rots.data()),
+    //      this->votes->size());
+    // /* DEBUG */
+    // fprintf(stderr, "bbb\n");
+    // /* DEBUG */
+
+    // return vote_counts_out;
 }
 
 float Model::ScorePose(const float *weights, Eigen::Matrix4f truth,
@@ -297,8 +375,9 @@ float Model::ScorePose(const float *weights, Eigen::Matrix4f truth,
     return score;
 }
 
-thrust::device_vector<float> Model::OptimizeWeights(Scene *empty_scene,
-                                                    int num_iterations){
+thrust::device_vector<float> Model::OptimizeWeights
+(std::vector<pcl::PointCloud<pcl::PointNormal>::Ptr> empty_cloud_vec,
+ int num_iterations){
     MODEL_OBJ = this;
 
     float3 t;
@@ -311,8 +390,14 @@ thrust::device_vector<float> Model::OptimizeWeights(Scene *empty_scene,
         r = (float4){0, 0, 0, 0};
         pcl::PointCloud<pcl::PointNormal> *new_scene_cloud =
             new pcl::PointCloud<pcl::PointNormal>();
-        TRUTH = GenerateSceneWithModel(*this->cloud_ptr, *empty_scene->cloud_ptr, t, r,
+        for(int j = 0; j < empty_cloud_vec.size(); j++){
+            GenerateSceneWithModel(*empty_cloud_vec[j], *new_scene_cloud, t, r,
+                                   *new_scene_cloud);
+        }
+        TRUTH = GenerateSceneWithModel(*this->cloud_ptr, *new_scene_cloud, t, r,
                                        *new_scene_cloud);
+
+
         Scene *new_scene = new Scene(new_scene_cloud, this->d_dist);
         SCENE_OBJ = new_scene;
 
@@ -325,12 +410,6 @@ thrust::device_vector<float> Model::OptimizeWeights(Scene *empty_scene,
             avg_weight_vec[j] = (avg_weight_vec[j]*(i) + weights[j])/(i+1);
             fprintf(stderr, "avg_weights[%d]: %f\n", j, avg_weight_vec[j]);
         }
-        // thrust::device_ptr<float> weights_dev_ptr =
-        //     thrust::device_pointer_cast<float>(weights);
-        // thrust::device_vector<float> weight_vec =
-        //     thrust::device_vector<float>(weights,
-        //                                  weights+this->cloud_ptr->size());
-
         delete new_scene_cloud;
         delete new_scene;
     }
@@ -352,12 +431,10 @@ void Model::ppf_lookup(Scene *scene){
 
     // Steps 1-3
     // launch voting kernel instance for each scene reference point
-    fprintf(stderr, "blargh1\n");
     ComputeUniqueVotes(scene);
-    fprintf(stderr, "blargh1\n");
     ComputeTransformations(scene);
     /* DEBUG */
-    fprintf(stderr, "votes_size: %ld\n", this->votes->size());
+    fprintf(stderr, "votes_size: %lu\n", this->votes->size());
     /* DEBUG */
 
     // thrust::host_vector<float>host_weights(this->modelPointVoteWeights);
@@ -373,47 +450,12 @@ void Model::ppf_lookup(Scene *scene){
                                   this->modelPointVoteWeights);
 
     this->vote_counts_out = ClusterTransformations();
+    // this->vote_counts_out = ClusterTransformationsCPU();
 
     thrust::sort_by_key(this->vote_counts_out->begin(),
                         this->vote_counts_out->end(),
                         thrust::device_ptr<struct float16>((struct float16 *) thrust::raw_pointer_cast(this->transformations.data())),
                         thrust::greater<unsigned int>());
-
-
-    // thrust::device_vector<unsigned int> *uniqueSceneRefPts =
-    //     new thrust::device_vector<unsigned int>(this->votes->size());
-    // this->maxval = new thrust::device_vector<unsigned int>(this->votes->size());
-    // thrust::device_vector<unsigned int> *maxModelAngleCode =
-    //     new thrust::device_vector<unsigned int>(this->votes->size());
-
-    // thrust::reduce_by_key
-    //     (// key input: step function that increments for every row
-    //      thrust::make_transform_iterator(votes->begin()+1, high_32_bits()),
-    //      thrust::make_transform_iterator(votes->end(), high_32_bits()),
-    //      // value input: (value, index) tuple
-    //      thrust::make_zip_iterator(thrust::make_tuple(voteCounts->begin()+1,
-    //                                                   thrust::make_transform_iterator(votes->begin()+1,
-    //                                                                                   low_32_bits()))),
-    //      uniqueSceneRefPts->begin(),
-    //      thrust::make_zip_iterator(thrust::make_tuple(this->maxval->begin(),
-    //                                                   maxModelAngleCode->begin())),
-    //      thrust::equal_to<unsigned int>(),
-    //      // compare by first element of tuple
-    //      thrust::maximum<thrust::tuple<unsigned int, unsigned int> >());
-
-
-
-    // Step 8, 9
-    // call trans_calc_kernel
-    // this->transformations = new thrust::device_vector<float>(this->votes->size()*16);
-
-    // blocks = std::min(((int)(this->votes->size()) + BLOCK_SIZE - 1) / BLOCK_SIZE, MAX_NBLOCKS);
-    // trans_calc_kernel<<<blocks,BLOCK_SIZE>>>
-    //     (RAW_PTR(uniqueSceneRefPts), RAW_PTR(maxModelAngleCode),
-    //      RAW_PTR(this->modelPoints), RAW_PTR(this->modelNormals),
-    //      RAW_PTR(scene->getModelPoints()), RAW_PTR(scene->getModelNormals()),
-    //      RAW_PTR(this->transformations),
-    //      this->votes->size());
 
     #ifdef DEBUG
         // end cuda timer

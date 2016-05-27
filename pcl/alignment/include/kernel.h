@@ -64,11 +64,16 @@ __global__ void vec_decode_kernel(float4 *vecs, unsigned int *key2VecMap,
 
 __global__ void ppf_hash_kernel(float4 *ppfs, unsigned int *codes, int count);
 
+__global__ void ppf_vote_count_kernel(unsigned int *sceneKeys, std::size_t *sceneIndices,
+                                      unsigned int *hashKeys, std::size_t *ppfCount,
+                                      unsigned long *ppf_vote_counts, int count);
+
 __global__ void ppf_vote_kernel(unsigned int *sceneKeys, std::size_t *sceneIndices,
                                 unsigned int *hashKeys, std::size_t *ppfCount,
                                 std::size_t *firstPPFIndex, std::size_t *key2ppfMap,
                                 float3 *modelPoints, float3 *modelNormals, int modelSize,
                                 float3 *scenePoints, float3 *sceneNormals, int sceneSize,
+                                unsigned long *ppf_vote_indices,
                                 unsigned long *votes, int count, float d_dist);
 
 __global__ void ppf_reduce_rows_kernel(unsigned long *votes, unsigned int *voteCounts,

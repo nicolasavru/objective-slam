@@ -364,21 +364,21 @@ __global__ void ppf_kernel(float3 *points, float3 *norms, float4 *out, int count
     int idx = ind + blockIdx.x * blockDim.x;
     int bound;
 
-    while(idx < count) {
+    __shared__ float3 Spoints[BLOCK_SIZE];
+    __shared__ float3 Snorms[BLOCK_SIZE];
 
-        __shared__ float3 Spoints[BLOCK_SIZE];
-        __shared__ float3 Snorms[BLOCK_SIZE];
+    while(idx < count) {
 
         float3 thisPoint = points[idx];
         float3 thisNorm  = norms[idx];
-
         for(int i = 0; i < count; i+=BLOCK_SIZE){
 
             bound = MIN(count - i, BLOCK_SIZE);
 
-            if (ind < bound){
+            __syncthreads();
+            if(ind < bound){
                 Spoints[ind] = points[i+ind];
-                Snorms[ind]  = norms[i+ind];
+                Snorms[ind] = norms[i+ind];
             }
             __syncthreads();
 
@@ -396,17 +396,19 @@ __global__ void ppf_kernel(float3 *points, float3 *norms, float4 *out, int count
                     continue;
                 };
                 // MATLAB model_description.m:37
-                float4 ppf = compute_ppf(thisPoint, thisNorm, Spoints[j], Snorms[j]);
-                if(ppf.w < D_ANGLE0){
-                    out[idx*count + j + i].x = CUDART_NAN_F;
-                    continue;
-                }
-                out[idx*count + j + i] = ppf;
+                // Spoints and Snorms are currently unreliable due to a race condition.
+                // float4 ppf = compute_ppf(thisPoint, thisNorm, Spoints[j], Snorms[j]);
+                float4 ppf = compute_ppf(thisPoint, thisNorm, points[i + j], norms[i + j]);
+                // if(ppf.w < D_ANGLE0){
+                //     out[idx*count + j + i].x = CUDART_NAN_F;
+                //     continue;
+                // }
                 // MATLAB model_description.m:42
-                out[idx*count + j + i] = disc_feature(out[idx*count + j + i], d_dist, D_ANGLE0);
+                out[idx*count + j + i] = disc_feature(ppf, d_dist, D_ANGLE0);
             }
         }
         //grid stride
+        __syncthreads();
         idx += blockDim.x * gridDim.x;
     }
 }
@@ -463,12 +465,37 @@ __global__ void ppf_hash_kernel(float4 *ppfs, unsigned int *codes, int count){
 // return drost eqn. 2 as final solution(s)
 //
 
+__global__ void ppf_vote_count_kernel(unsigned int *sceneKeys, std::size_t *sceneIndices,
+                                      unsigned int *hashKeys, std::size_t *ppfCount,
+                                      unsigned long *ppf_vote_counts, int count){
+    if(count <= 1) return;
+
+    int ind = threadIdx.x;
+    int idx = ind + blockIdx.x * blockDim.x;
+
+    while(idx < count){
+        unsigned int thisSceneKey = sceneKeys[idx];
+        unsigned int thisSceneIndex = sceneIndices[idx];
+        if(thisSceneKey == 0 ||
+           thisSceneKey != hashKeys[thisSceneIndex]){
+            ppf_vote_counts[idx] = 0;
+        }
+        else{
+            ppf_vote_counts[idx] = ppfCount[thisSceneIndex];
+        }
+
+        idx += blockDim.x * gridDim.x;
+    }
+}
+
+
 // TODO: increase thread work
 __global__ void ppf_vote_kernel(unsigned int *sceneKeys, std::size_t *sceneIndices,
                                 unsigned int *hashKeys, std::size_t *ppfCount,
                                 std::size_t *firstPPFIndex, std::size_t *key2ppfMap,
                                 float3 *modelPoints, float3 *modelNormals, int modelSize,
                                 float3 *scenePoints, float3 *sceneNormals, int sceneSize,
+                                unsigned long *ppf_vote_indices,
                                 unsigned long *votes_old, int count, float d_dist){
     if(count <= 1) return;
 
@@ -479,8 +506,7 @@ __global__ void ppf_vote_kernel(unsigned int *sceneKeys, std::size_t *sceneIndic
     while(idx < count){
         unsigned int thisSceneKey = sceneKeys[idx];
         // float4 thisScenePPF = scenePPFs[idx];
-        unsigned int thisSceneIndex
-            = sceneIndices[idx];
+        unsigned int thisSceneIndex = sceneIndices[idx];
         // if (isnan(thisScenePPF.x) ||
         //     thisScenePPF != modelPPFs[thisSceneIndex]){
         //     idx += blockDim.x * gridDim.x;
@@ -516,7 +542,9 @@ __global__ void ppf_vote_kernel(unsigned int *sceneKeys, std::size_t *sceneIndic
                               d_dist, alpha_idx);
             // votes_old[idx*modelSize + i] =
             //     (((unsigned long) scene_r_index) << 32) | (model_r_index << 6) | (alpha_idx);
-            votes_old[idx*100 + i] =
+            // votes_old[idx*100 + i] =
+            //     (((unsigned long) scene_r_index) << 32) | (model_r_index << 6) | (alpha_idx);
+            votes_old[ppf_vote_indices[idx] + i] =
                 (((unsigned long) scene_r_index) << 32) | (model_r_index << 6) | (alpha_idx);
         }
 
@@ -590,8 +618,6 @@ __global__ void trans_calc_kernel(unsigned int *uniqueSceneRefPts,
     unsigned int angle_idx, model_point_idx, scene_point_idx;
 
     unsigned int low6 = ((unsigned int) -1) >> 26;
-    // unsigned long hi32 = ((unsigned long) -1) << 32;
-    // unsigned long model_point_mask = ((unsigned long) -1) ^ hi32 ^ low6;
     float m_roty, m_rotz, s_roty, s_rotz;
 
     while(idx < count){
@@ -713,70 +739,50 @@ __global__ void trans2idx_kernel(float3 *translations,
     }
 }
 
-// __global__ void rot_clustering_kernel(float3 *translations,
-//                                       float4 *quaternions,
-//                                       unsigned int *vote_counts,
-//                                       // float3 *translations_out,
-//                                       // float4 *quaternions_out,
-//                                       unsigned int *vote_counts_out,
-//                                       int count){
-//     if(count <= 1) return;
+__global__ void rot_clustering_kernel_helper(float3 *translations,
+                                             float4 *quaternions,
+                                             float *vote_counts,
+                                             std::size_t thisFirstTransIndex,
+                                             std::size_t thisTransCount,
+                                             std::size_t *key2transMap,
+                                             float *vote_counts_out,
+                                             float trans_thresh){
+    if(thisTransCount <= 1) return;
 
-//     int ind = threadIdx.x;
-//     int idx = ind + blockIdx.x * blockDim.x;
-//     int bound;
+    int ind = threadIdx.x;
+    int idx = ind + blockIdx.x * blockDim.x;
 
-//     while(idx < count) {
+    float rot_thresh_sq = ROT_THRESH*ROT_THRESH;
 
-//         __shared__ float3 Strans[BLOCK_SIZE/2];
-//         __shared__ float4 Squat[BLOCK_SIZE/2];
-//         __shared__ unsigned int Svotecounts[BLOCK_SIZE/2];
+    while(idx < thisTransCount){
+        __shared__ unsigned int Svotecounts[BLOCK_SIZE];
 
-//         float3 thisTrans = translations[idx];
-//         float4 thisQuat  = quaternions[idx];
-//         unsigned int thisVoteCountOut = vote_counts[idx];
-//         if(thisVoteCountOut < 10){
-//             idx += blockDim.x * gridDim.x;
-//             continue;
-//         }
+        float3 thisTrans = translations[idx];
+        float4 thisQuat  = quaternions[idx];
+        float vote_count_out = 0;
 
-//         for(int i = 0; i < count; i+=BLOCK_SIZE/2){
+        unsigned int thisTransIndex = key2transMap[thisFirstTransIndex+idx];
+        float quatDiff =
+            fabsf(8*(1-dot(thisQuat, quaternions[thisTransIndex])));
+        if(quatDiff < rot_thresh_sq){
+            float normDiffTrans =
+                norm(thisTrans - translations[thisTransIndex]);
+            if(normDiffTrans < trans_thresh){
+                Svotecounts[ind] = vote_counts[thisTransIndex];
+            }
+        }
+        __syncthreads();
+        if(ind == BLOCK_SIZE-1){
+            for(int i = 0; i < ind; i++){
+                    vote_count_out += Svotecounts[i];
+            }
+            vote_counts_out[idx] = vote_count_out;
+        }
+        idx += blockDim.x * gridDim.x;
+    }
+}
 
-//             bound = MIN(count - i, BLOCK_SIZE/2);
 
-//             //read as a block into shared memory
-//             if (ind < bound){
-//                 Strans[ind] = translations[i+ind];
-//                 Squat[ind]  = quaternions[i+ind];
-//                 Svotecounts[ind] = vote_counts[i+ind];
-//             }
-//             __syncthreads();
-
-//             for(int j = 0; j < bound; j++) {
-//                 if((j + i - idx) == 0){
-//                     //no self-comparisons
-//                     continue;
-//                 };
-//                 if(Svotecounts[j] < 10){
-//                     continue;
-//                 }
-//                 // compute similarity between transformations
-//                 float normDiffTrans = norm(minus(thisTrans, Strans[j]));
-//                 float quatDiff      = 8*(1-dot(thisQuat,Squat[j]));
-//                 //Check for similarity
-//                 if ((normDiffTrans < TRANS_THRESH) && (quatDiff < ROT_THRESH))
-//                     {
-//                         // thisVoteCountOut += Svotecounts[j];
-//                         thisVoteCountOut = 1;
-//                         // vote_counts_out[idx] += Svotecounts[j];
-//                     }
-//             }
-//         }
-//         vote_counts_out[idx] = thisVoteCountOut;
-//         //grid stride
-//         idx += blockDim.x * gridDim.x;
-//     }
-// }
 
 __global__ void rot_clustering_kernel(float3 *translations,
                                       float4 *quaternions,
@@ -785,8 +791,6 @@ __global__ void rot_clustering_kernel(float3 *translations,
                                       std::size_t *transIndices,
                                       unsigned int *transKeys,  std::size_t *transCount,
                                       std::size_t *firstTransIndex, std::size_t *key2transMap,
-                                      // float3 *translations_out,
-                                      // float4 *quaternions_out,
                                       float *vote_counts_out,
                                       int count, float trans_thresh){
     if(count <= 1) return;
@@ -797,44 +801,40 @@ __global__ void rot_clustering_kernel(float3 *translations,
     float rot_thresh_sq = ROT_THRESH*ROT_THRESH;
 
     while(idx < count) {
-        // __shared__ float3 Strans[BLOCK_SIZE/2];
-        // __shared__ float4 Squat[BLOCK_SIZE/2];
-        // __shared__ unsigned int Svotecounts[BLOCK_SIZE/2];
-
         float3 thisTrans = translations[idx];
         float4 thisQuat  = quaternions[idx];
+        float vote_count_out = 0;
         for(int adjacent_block = 0; adjacent_block < 27; adjacent_block++){
-            // printf("27*idx: %u, %u, %d\n", 27*idx, idx, count);
             unsigned int thisAdjacentHash = adjacent_trans_hash[27*idx+adjacent_block];
             unsigned int thisAdjacentHashIndex = transIndices[27*idx+adjacent_block];
-            // printf("thisAdjacentHash[%u]: %u\n", 27*idx+adjacent_block, thisAdjacentHash);
             if(thisAdjacentHash == 0 ||
                thisAdjacentHash != transKeys[thisAdjacentHashIndex]
                ){
-                // idx += blockDim.x * gridDim.x;
-                // printf("skipping vote_counts_idx[%u]\n", idx);
-                // printf("thishash, adjhash: %u, %u\n", thisAdjacentHash, transKeys[thisAdjacentHashIndex]);
-                // vote_counts_out[idx] = thisAdjacentHash == 0 ? -1.0 : -2.0;
                 continue;
             }
-            // printf("thisAdjacentHash[%u]: %u\n", 27*idx+adjacent_block, thisAdjacentHash);
             unsigned int thisTransCount = transCount[thisAdjacentHashIndex];
-            // printf("transCount[%u]: %u\n", thisAdjacentHashIndex, thisTransCount);
             unsigned int thisFirstTransIndex = firstTransIndex[thisAdjacentHashIndex];
+
+            // Dynamic parallelism is broken in CUDA 6.5.
+            // int blocks = min(((int) (thisTransCount + BLOCK_SIZE - 1)) / BLOCK_SIZE, MAX_NBLOCKS);
+            // rot_clustering_kernel_helper<<<blocks,BLOCK_SIZE>>>
+            //     (translations, quaternions, vote_counts, thisFirstTransIndex, thisTransCount,
+            //      key2transMap, vote_counts_out, trans_thresh);
 
             for(int j = 0; j < thisTransCount; j++){
                 unsigned int thisTransIndex = key2transMap[thisFirstTransIndex+j];
-                float normDiffTrans =
-                    norm(thisTrans - translations[thisTransIndex]);
-                if(normDiffTrans < trans_thresh){
-                    float quatDiff =
+                float quatDiff =
                         fabsf(8*(1-dot(thisQuat, quaternions[thisTransIndex])));
-                    if(quatDiff < rot_thresh_sq){
-                        vote_counts_out[idx] += vote_counts[thisTransIndex];
+                if(quatDiff < rot_thresh_sq){
+                    float normDiffTrans =
+                        norm(thisTrans - translations[thisTransIndex]);
+                    if(normDiffTrans < trans_thresh){
+                        vote_count_out += vote_counts[thisTransIndex];
                     }
                 }
             }
         }
+        vote_counts_out[idx] = vote_count_out;
 
         // grid stride
         idx += blockDim.x * gridDim.x;

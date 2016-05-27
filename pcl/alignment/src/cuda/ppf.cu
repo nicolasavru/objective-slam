@@ -62,39 +62,35 @@ void test_histogram(char *point_path, int N){
 
     thrust::host_vector<unsigned int> *A = new thrust::host_vector<unsigned int>(*ppfCount);
 
-    for (int i=0; i<num_bins; i++){
+    for (int i = 0; i < num_bins; i++){
         fprintf(stderr, "%u: %u %u\n", i, (*A)[i]);
     }
 }
 
 void ptr_test_cu(pcl::PointCloud<pcl::PointNormal> *scene_cloud_ptr){
-    /* DEBUG */
-    fprintf(stderr, "foo-1: %p, %d, %d\n", scene_cloud_ptr, scene_cloud_ptr->points.size(), scene_cloud_ptr->size());
+    fprintf(stderr, "foo-1: %p, %lu, %lu\n", scene_cloud_ptr, scene_cloud_ptr->points.size(), scene_cloud_ptr->size());
 }
 
 void ptr_test_cu2(pcl::PointCloud<pcl::PointNormal> scene_cloud){
-    /* DEBUG */
-    fprintf(stderr, "foo-2: %d, %d\n", scene_cloud.points.size(), scene_cloud.size());
+    fprintf(stderr, "foo-2: %lu, %lu\n", scene_cloud.points.size(), scene_cloud.size());
 }
 
 void ptr_test_cu3(pcl::PointCloud<pcl::PointNormal> &scene_cloud){
-    /* DEBUG */
-    fprintf(stderr, "foo-3: %d, %d\n", scene_cloud.points.size(), scene_cloud.size());
+    fprintf(stderr, "foo-3: %lu, %lu\n", scene_cloud.points.size(), scene_cloud.size());
 }
 
 void ptr_test_cu4(const pcl::PointCloud<pcl::PointNormal> &scene_cloud){
-    /* DEBUG */
-    fprintf(stderr, "foo-4: %d, %d\n", scene_cloud.points.size(), scene_cloud.size());
+    fprintf(stderr, "foo-4: %lu, %lu\n", scene_cloud.points.size(), scene_cloud.size());
 }
 
 
-Eigen::Matrix4f ply_load_main(pcl::PointCloud<pcl::PointNormal> *scene_cloud_ptr,
-                              pcl::PointCloud<pcl::PointNormal> *object_cloud_ptr,
-                              pcl::PointCloud<pcl::PointNormal> *empty_scene_cloud_ptr,
-                              float d_dist, int devUse, float *model_weights){
-    /* DEBUG */
-    fprintf(stderr, "foo1: %p, %d, %d\n", scene_cloud_ptr, scene_cloud_ptr->points.size(), scene_cloud_ptr->size());
-    /* DEBUG */
+Eigen::Matrix4f ppf_registration(pcl::PointCloud<pcl::PointNormal> *scene_cloud_ptr,
+                                 pcl::PointCloud<pcl::PointNormal> *object_cloud_ptr,
+                                 std::vector<pcl::PointCloud<pcl::PointNormal>::Ptr> empty_cloud_vec,
+                                 float d_dist, int devUse, float *model_weights){
+    // /* DEBUG */
+    // fprintf(stderr, "foo1: %p, %lu, %lu\n", scene_cloud_ptr, scene_cloud_ptr->points.size(), scene_cloud_ptr->size());
+    // /* DEBUG */
     int *device_array = 0;
     HANDLE_ERROR(cudaMalloc((void**)&device_array, 1024*sizeof(int)));
 
@@ -123,13 +119,12 @@ Eigen::Matrix4f ply_load_main(pcl::PointCloud<pcl::PointNormal> *scene_cloud_ptr
     // build model description
     Model *model = new Model(object_cloud_ptr, d_dist);
 
-    /* DEBUG */
-    fprintf(stderr, "foo0: %d\n", scene_cloud_ptr->points.size());
-    /* DEBUG */
+    // /* DEBUG */
+    // fprintf(stderr, "foo0: %d\n", scene_cloud_ptr->points.size());
+    // /* DEBUG */
     Scene *scene = new Scene(scene_cloud_ptr, d_dist);
-    Scene *empty_scene = new Scene(empty_scene_cloud_ptr, d_dist);
 
-    // thrust::host_vector<float> optimal_weights(model->OptimizeWeights(empty_scene, 4));
+    // thrust::host_vector<float> optimal_weights(model->OptimizeWeights(empty_cloud_vec, 4));
     // model->modelPointVoteWeights = thrust::device_vector<float>(optimal_weights);
     for(int i = 0; i < object_cloud_ptr->size(); i++){
         model_weights[i] = model->modelPointVoteWeights[i];
@@ -164,14 +159,10 @@ Eigen::Matrix4f ply_load_main(pcl::PointCloud<pcl::PointNormal> *scene_cloud_ptr
     Eigen::Matrix4f T;
     for (int j=0; j<4; j++){
         for (int k=0; k<4; k++){
-            T(j,k) = transformations[16+j*4+k];
+            // T(j,k) = transformations[16+j*4+k];
+            T(j,k) = transformations[j*4+k];
         }
     }
-
-    // // Deallocate ram
-    // delete points;
-    // delete norms;
-    // delete ppfs;
 
     delete model;
     delete scene;

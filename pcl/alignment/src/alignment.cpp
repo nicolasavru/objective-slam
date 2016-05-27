@@ -1,3 +1,5 @@
+#include <stdio.h>
+#include <stdlib.h>
 #include <Eigen/Core>
 #include <cuda.h>
 #include <cuda_runtime.h>                // Stops underlining of __global__
@@ -24,6 +26,7 @@
 #include <pcl/kdtree/kdtree_flann.h>
 #include <pcl/features/normal_3d.h>
 #include <pcl/filters/random_sample.h>
+#include <vector>
 
 #include "ppf.h"
 #include "vector_ops.h"
@@ -41,10 +44,10 @@ typedef pcl::PointCloud<FeatureT> FeatureCloudT;
 typedef pcl::visualization::PointCloudColorHandlerCustom<PointNT> ColorHandlerT;
 
 template <typename Point>
-typename pcl::PointCloud<Point>::Ptr randomDownsample(typename pcl::PointCloud<Point>::Ptr cloud, int n){
+typename pcl::PointCloud<Point>::Ptr randomDownsample(typename pcl::PointCloud<Point>::Ptr cloud, float p){
     pcl::RandomSample<Point> rs;
     typename pcl::PointCloud<Point>::Ptr filtered_cloud(new pcl::PointCloud<Point>);
-    rs.setSample(1.0/n * cloud->size());
+    rs.setSample(p * cloud->size());
     rs.setInputCloud(cloud);
     rs.filter(*filtered_cloud);
     return filtered_cloud;
@@ -100,36 +103,51 @@ int main(int argc, char **argv){
     FeatureCloudT::Ptr scene_features(new FeatureCloudT);
 
     // Get input object and scene
-    if (argc != 4){
-        pcl::console::print_error("Syntax is: %s object.ply scene.ply empty_scene.ply\n",
+    if (argc < 4){
+        pcl::console::print_error("Syntax is: %s tau_d object.ply scene.ply [empty_scene.ply] ... ",
                 argv[0]);
         return (1);
     }
 
+    float tau_d = strtof(argv[1], NULL);
+
     // Load object and scene
     // MATLAB drost.m:5-39
     pcl::console::print_highlight("Loading object point cloud...\n");
-    if (pcl::io::loadPLYFile<PointNT>(argv[1], *object) < 0) {
+    if (pcl::io::loadPLYFile<PointNT>(argv[2], *object) < 0) {
         pcl::console::print_error("Error loading object file!\n");
         return (1);
     }
     pcl::console::print_highlight("Loading scene point cloud...\n");
-    if (pcl::io::loadPLYFile<PointNT>(argv[2], *scene) < 0) {
+    if (pcl::io::loadPLYFile<PointNT>(argv[3], *scene) < 0) {
         pcl::console::print_error("Error loading scene file!\n");
         return (1);
     }
-    pcl::console::print_highlight("Loading empty scene point cloud...\n");
-    if (pcl::io::loadPLYFile<PointNT>(argv[3], *empty_scene) < 0) {
-        pcl::console::print_error("Error loading scene file!\n");
-        return (1);
+    std::vector<PointCloudT::Ptr> empty_cloud_vec;
+    for(int i = 4; i < argc; i++){
+        empty_cloud_vec.push_back(PointCloudT::Ptr(new PointCloudT));
+        pcl::console::print_highlight("Loading empty scene point cloud...\n");
+        if (pcl::io::loadPLYFile<PointNT>(argv[i], *empty_cloud_vec.back()) < 0) {
+            pcl::console::print_error("Error loading scene file!\n");
+            return (1);
+        }
     }
 
     PointNT minPt, maxPt;
+    PointNT minPt2, maxPt2;
+    pcl::getMinMax3D(*object, minPt2, maxPt2);
+    float model_diam_x = maxPt2.x - minPt2.x;
+    float model_diam_y = maxPt2.y - minPt2.y;
+    float model_diam_z = maxPt2.z - minPt2.z;
     pcl::getMaxSegment(*object, minPt, maxPt);
     float model_diam = distance(minPt, maxPt);
-    float d_dist = 0.035 * model_diam;
+    float d_dist = tau_d * model_diam;
+    float d_dist2 = d_dist * 1.25;
+    float d_dist3 = d_dist * 1.5;
     /* DEBUG */
     fprintf(stderr, "model_diam, d_dist: %f, %f\n", model_diam, d_dist);
+    fprintf(stderr, "model_diam_x, model_diam_y, model_diam_z: %f, %f, %f\n",
+            model_diam_x, model_diam_y, model_diam_z);
     /* DEBUG */
 
     // Downsample
@@ -139,26 +157,34 @@ int main(int argc, char **argv){
     // int object_n = 1000;
     // int scene_n = 500;
     int empty_scene_n = 1000; pcl::console::print_info("Object size before filtering: %u (%u x %u)\n",
-                             object->size(), object-> width, object->height);
+                             object->size(), object->width, object->height);
     // object = sequentialDownsample<PointNT>(object, object_n);
+    // object = randomDownsample<PointNT>(object, 2500.0/object->size());
     object = voxelGridDownsample<PointNT>(object, d_dist);
     pcl::console::print_info("Object size after filtering: %u (%u x %u)\n",
                              object->size(), object-> width, object->height);
 
     scene_orig = scene;
     pcl::console::print_info("Scene size before filtering: %u (%u x %u)\n",
-                             scene->size(), scene-> width, scene->height);
+                             scene->size(), scene->width, scene->height);
     // scene = sequentialDownsample<PointNT>(scene, scene_n);
+    // scene = randomDownsample<PointNT>(scene, 2500.0/scene->size());
     scene = voxelGridDownsample<PointNT>(scene, d_dist);
     pcl::console::print_info("Scene size after filtering: %u (%u x %u)\n",
-                             scene->size(), scene-> width, scene->height);
+                             scene->size(), scene->width, scene->height);
 
-    pcl::console::print_info("Empty scene size before filtering: %u (%u x %u)\n",
-                             empty_scene->size(), empty_scene-> width, empty_scene->height);
-    empty_scene = sequentialDownsample<PointNT>(empty_scene, empty_scene_n);
-    // empty_scene = voxelGridDownsample<PointNT>(empty_scene, 0.075);
-    pcl::console::print_info("Empty scene size after filtering: %u (%u x %u)\n",
-                             empty_scene->size(), empty_scene-> width, empty_scene->height);
+
+    for(int i = 0; i < empty_cloud_vec.size(); i++){
+        empty_scene = empty_cloud_vec[i];
+        pcl::console::print_info("Empty scene size before filtering: %u (%u x %u)\n",
+                                 empty_scene->size(), empty_scene->width, empty_scene->height);
+        // empty_scene = sequentialDownsample<PointNT>(empty_scene, empty_scene_n);
+        // scene = randomDownsample<PointNT>(empty_scene, 1000.0/empty_scene->size());
+        empty_scene = voxelGridDownsample<PointNT>(empty_scene, d_dist3);
+        pcl::console::print_info("Empty scene size after filtering: %u (%u x %u)\n",
+                                 empty_scene->size(), empty_scene->width, empty_scene->height);
+        empty_cloud_vec[i] = empty_scene;
+    }
 
     // // Estimate normals for object
     // pcl::console::print_highlight("Estimating object normals...\n");
@@ -186,21 +212,21 @@ int main(int argc, char **argv){
 
     // MATLAB drost.m 59-63 model_description() and voting_scheme()
     // pass in object and scene, get back transformation matching object to scene
-    pcl::PointCloud<pcl::PointNormal> test_cloud = pcl::PointCloud<pcl::PointNormal>(*scene);
-    pcl::PointCloud<pcl::PointNormal> *test_cloud2 = new pcl::PointCloud<pcl::PointNormal>(*scene);
-    /* DEBUG */
-    fprintf(stderr, "foo0: %p, %lu, %lu\n", scene.get(), scene.get()->points.size(), scene.get()->size());
-    fprintf(stderr, "foo0: %p, %lu, %lu\n", &test_cloud, (&test_cloud)->points.size(), (&test_cloud)->size());
-    // fprintf(stderr, "foo0: %p, %d, %d\n", test_cloud2, test_cloud2->points.size(), test_cloud2->size());
-    ptr_test(test_cloud2);
-    ptr_test_cu(test_cloud2);
-    ptr_test_cu2(*test_cloud2);
-    ptr_test_cu3(*test_cloud2);
-    ptr_test_cu4(*test_cloud2);
+    // pcl::PointCloud<pcl::PointNormal> test_cloud = pcl::PointCloud<pcl::PointNormal>(*scene);
+    // pcl::PointCloud<pcl::PointNormal> *test_cloud2 = new pcl::PointCloud<pcl::PointNormal>(*scene);
+    // /* DEBUG */
+    // fprintf(stderr, "foo0: %p, %lu, %lu\n", scene.get(), scene.get()->points.size(), scene.get()->size());
+    // fprintf(stderr, "foo0: %p, %lu, %lu\n", &test_cloud, (&test_cloud)->points.size(), (&test_cloud)->size());
+    // // fprintf(stderr, "foo0: %p, %d, %d\n", test_cloud2, test_cloud2->points.size(), test_cloud2->size());
+    // ptr_test(test_cloud2);
+    // ptr_test_cu(test_cloud2);
+    // ptr_test_cu2(*test_cloud2);
+    // ptr_test_cu3(*test_cloud2);
+    // ptr_test_cu4(*test_cloud2);
     /* DEBUG */
     float *model_weights = (float *)malloc(object->size()*sizeof(float));
-    Eigen::Matrix4f T = ply_load_main(scene.get(), object.get(), empty_scene.get(),
-                                      d_dist, 1, model_weights);
+    Eigen::Matrix4f T = ppf_registration(scene.get(), object.get(), empty_cloud_vec,
+                                         d_dist, 1, model_weights);
 
     pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr color_cloud(new pcl::PointCloud<pcl::PointXYZRGBNormal>);
     pcl::copyPointCloud(*object, *color_cloud);
@@ -214,9 +240,6 @@ int main(int argc, char **argv){
             static_cast<uint32_t>(g) << 8  |
             static_cast<uint32_t>(b);
         (*color_cloud)[i].rgb = *reinterpret_cast<float *>(&rgb);
-        // /* DEBUG */
-        // fprintf(stderr, "rgb: %x, %u, %u, %u\n", rgb, r, g, b);
-        // /* DEBUG */
     }
     float3 t = {0, 0, 0};
     float4 r = {0, 0, 0, 0};

@@ -37,7 +37,25 @@ Scene::Scene(pcl::PointCloud<pcl::PointNormal> *cloud_ptr, float d_dist){
 
     this->d_dist = d_dist;
 
-    this->initPPFs(points, normals, cloud_ptr->size(), d_dist, 5);
+    this->initPPFs(points, normals, cloud_ptr->size(), d_dist, 1);
+    // thrust::host_vector<float3> *host_scene_modelnormals =
+    //     new thrust::host_vector<float3>(*this->modelNormals);
+    // for(int i = 0; i < host_scene_modelnormals->size(); i++){
+    //     /* DEBUG */
+    //     fprintf(stdout, "host_scene_modelnormals[%u]: %f, %f, %f\n", i,
+    //             (*host_scene_modelnormals)[i].x, (*host_scene_modelnormals)[i].y, (*host_scene_modelnormals)[i].z);
+    //     /* DEBUG */
+    // }
+    // thrust::host_vector<float4> *host_scene_modelppfs =
+    //     new thrust::host_vector<float4>(*this->modelPPFs);
+    // for(int i = 0; i < host_scene_modelppfs->size(); i++){
+    //     /* DEBUG */
+    //     fprintf(stdout, "host_scene_modelppfs[%u]: %f, %f, %f, %f\n", i,
+    //             (*host_scene_modelppfs)[i].x, (*host_scene_modelppfs)[i].y, (*host_scene_modelppfs)[i].z,
+    //             (*host_scene_modelppfs)[i].w);
+    //     /* DEBUG */
+    // }
+
     HANDLE_ERROR(cudaGetLastError());
     HANDLE_ERROR(cudaDeviceSynchronize());
     this->hashKeys = new thrust::device_vector<unsigned int>(this->modelPPFs->size());
@@ -46,6 +64,15 @@ Scene::Scene(pcl::PointCloud<pcl::PointNormal> *cloud_ptr, float d_dist){
     ppf_hash_kernel<<<blocks,BLOCK_SIZE>>>(RAW_PTR(this->modelPPFs),
                                            RAW_PTR(this->hashKeys),
                                            this->modelPPFs->size());
+
+    // thrust::host_vector<std::size_t> *host_scene_hashkeys_init =
+    //     new thrust::host_vector<std::size_t>(*this->hashKeys);
+    // for(int i = 0; i < host_scene_hashkeys_init->size(); i++){
+    //     /* DEBUG */
+    //     fprintf(stdout, "host_scene_hashkeys_init[%u]: %u\n", i, (*host_scene_hashkeys_init)[i]);
+    //     /* DEBUG */
+    // }
+
 }
 
 Scene::~Scene(){
