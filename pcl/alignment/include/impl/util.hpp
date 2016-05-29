@@ -1,6 +1,8 @@
 #ifndef UTIL_IMPL_H
 #define UTIL_IMPL_H
 
+#include <thrust/device_vector.h>
+
 template <typename T>
 void write_array(const char *filename, T *data, int n){
     FILE *fp;
@@ -37,6 +39,5 @@ template <typename T>
 void write_device_vector(const char *filename, thrust::device_vector<T> *data){
     write_device_array(filename, RAW_PTR(data), data->size());
 }
-
 
 #endif /* UTIL_IMPL_H */

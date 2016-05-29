@@ -1,5 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <boost/program_options.hpp>
+#include <boost/format.hpp>
 #include <Eigen/Core>
 #include <cuda.h>
 #include <cuda_runtime.h>                // Stops underlining of __global__
@@ -13,8 +15,9 @@
 #include <pcl/features/fpfh_omp.h>
 #include <pcl/features/ppf.h>
 #include <pcl/filters/filter.h>
+#include <pcl/filters/random_sample.h>
+#include <pcl/filters/uniform_sampling.h>
 #include <pcl/filters/voxel_grid.h>
-#include <pcl/keypoints/uniform_sampling.h>
 #include <pcl/io/pcd_io.h>
 #include <pcl/io/ply_io.h>
 #include <pcl/registration/icp.h>
@@ -25,23 +28,46 @@
 #include <pcl/visualization/point_cloud_color_handlers.h>
 #include <pcl/kdtree/kdtree_flann.h>
 #include <pcl/features/normal_3d.h>
-#include <pcl/filters/random_sample.h>
 #include <vector>
 
 #include "ppf.h"
 #include "vector_ops.h"
+#include "impl/cycle_iterator.hpp"
 #include "impl/scene_generation.hpp"
-//#include "my_ppf_registration.h"
+#include "impl/util.hpp"
 
 // Types
-typedef pcl::PointNormal PointNT;
-typedef pcl::PointCloud<PointNT> PointCloudT;
 // typedef pcl::FPFHSignature33 FeatureT;
 typedef pcl::PPFSignature FeatureT;
-// typedef pcl::FPFHEstimationOMP<PointNT,PointNT,FeatureT> FeatureEstimationT;
-typedef pcl::PPFEstimation<PointNT, PointNT, FeatureT> FeatureEstimationT;
+// typedef pcl::FPFHEstimationOMP<pcl::PointNormal,pcl::PointNormal,FeatureT> FeatureEstimationT;
+typedef pcl::PPFEstimation<pcl::PointNormal, pcl::PointNormal, FeatureT> FeatureEstimationT;
 typedef pcl::PointCloud<FeatureT> FeatureCloudT;
-typedef pcl::visualization::PointCloudColorHandlerCustom<PointNT> ColorHandlerT;
+
+void ptr_test(pcl::PointCloud<pcl::PointNormal> *scene_cloud_ptr){
+    /* DEBUG */
+    fprintf(stderr, "foo-1: %p, %lu, %lu\n", scene_cloud_ptr, scene_cloud_ptr->points.size(), scene_cloud_ptr->size());
+}
+
+std::vector<uchar3> colors = {
+    uchar3{255,   0, 0},   // red
+    uchar3{  0, 255, 0},   // green
+    uchar3{  0,   0, 255}, // blue
+    uchar3{  0, 255, 255}, // cyan
+    uchar3{255,   0, 255}, // magenta
+    uchar3{255, 255, 0},   // yellow
+};
+
+
+namespace po = boost::program_options;
+
+
+// Workaround for a bug in pcl::geometry::distance.
+template <typename PointT>
+inline float distance (const PointT& p1, const PointT& p2){
+    Eigen::Vector3f diff = p1.getVector3fMap() - p2.getVector3fMap();
+    return (diff.norm ());
+}
+
 
 template <typename Point>
 typename pcl::PointCloud<Point>::Ptr randomDownsample(typename pcl::PointCloud<Point>::Ptr cloud, float p){
@@ -77,70 +103,128 @@ typename pcl::PointCloud<Point>::Ptr voxelGridDownsample(typename pcl::PointClou
 }
 
 
-void ptr_test(pcl::PointCloud<pcl::PointNormal> *scene_cloud_ptr){
-    /* DEBUG */
-    fprintf(stderr, "foo-1: %p, %lu, %lu\n", scene_cloud_ptr, scene_cloud_ptr->points.size(), scene_cloud_ptr->size());
-}
+// http://stackoverflow.com/questions/26389297/how-to-parse-comma-separated-values-with-boostprogram-options
+// http://stackoverflow.com/questions/18378798/use-boost-program-options-to-parse-an-arbitrary-string
+class CommaSeparatedVector{
+  public:
+    std::vector<std::string> values;
 
-// Workaround for a bug in pcl::geometry::distance.
-template <typename PointT>
-inline float distance (const PointT& p1, const PointT& p2){
-    Eigen::Vector3f diff = p1.getVector3fMap() - p2.getVector3fMap();
-    return (diff.norm ());
+    static void tokenize(const std::string& input, std::vector<std::string>& output,
+                  const std::string& delimiters = ","){
+        typedef boost::escaped_list_separator<char> separator_type;
+        separator_type separator("\\",    // The escape characters.
+                                 ",",    // The separator characters.
+                                 "\"\'"); // The quote characters.
+
+        // Tokenize the intput.
+        boost::tokenizer<separator_type> tokens(input, separator);
+
+        // Copy non-empty tokens from the tokenizer into the result.
+        copy_if(tokens.begin(), tokens.end(), std::back_inserter(output),
+                !boost::bind(&std::string::empty, _1));
+    }
+
+    friend std::istream& operator>>(std::istream& in, CommaSeparatedVector &value){
+        std::string token;
+        in >> token;
+        tokenize(token, value.values);
+        return in;
+    }
+};
+
+po::variables_map configure_options(int argc, char **argv){
+    po::options_description desc("Allowed options");
+    desc.add_options()
+        ("help", "produce help message")
+        ("dev", po::value<int>()->default_value(1), "CUDA device to use")
+        ("tau_d", po::value<float>()->default_value(0.030), "voxel grid factor")
+        ("ref_point_df", po::value<unsigned int>()->default_value(1),
+         "scene reference point downsample factor")
+        ("scene_files", po::value<CommaSeparatedVector>()->multitoken()->required(),
+         "ply files to find models in")
+        ("model_files", po::value<CommaSeparatedVector>()->multitoken()->required(),
+         "ply files to find in scenes")
+        ("training_files", po::value<CommaSeparatedVector>()->multitoken(),
+         "ply files to generate training scenes with")
+        ("validation_files", po::value<CommaSeparatedVector>()->multitoken(),
+         "file with ground truth transformations for models in scenes")
+        ("show_normals", po::value<bool>()->default_value(true), "whether to display normals")
+        ("visualize", po::value<bool>()->default_value(true),
+         "whether to visualize the scenes and models or only return text output")
+    ;
+
+    po::variables_map vm;
+    po::store(po::parse_command_line(argc, argv, desc), vm);
+
+    if(vm.count("help")){
+        cout << desc << "\n";
+        exit(1);
+    }
+
+    // http://stackoverflow.com/questions/5395503/required-and-optional-arguments-using-boost-library-program-options
+    po::notify(vm);
+
+    return vm;
 }
 
 // Align a rigid object to a scene with clutter and occlusions
 int main(int argc, char **argv){
     srand(time(0));
+    po::variables_map vm = configure_options(argc, argv);
 
-    // Point clouds
-    PointCloudT::Ptr object(new PointCloudT);
-    PointCloudT::Ptr object_aligned(new PointCloudT);
-    PointCloudT::Ptr scene(new PointCloudT);
-    PointCloudT::Ptr scene_orig(new PointCloudT);
-    PointCloudT::Ptr empty_scene(new PointCloudT);
-    FeatureCloudT::Ptr object_features(new FeatureCloudT);
-    FeatureCloudT::Ptr scene_features(new FeatureCloudT);
-
-    // Get input object and scene
-    if (argc < 4){
-        pcl::console::print_error("Syntax is: %s tau_d object.ply scene.ply [empty_scene.ply] ... ",
-                argv[0]);
-        return (1);
-    }
-
-    float tau_d = strtof(argv[1], NULL);
-
-    // Load object and scene
+    // Load model and scene
     // MATLAB drost.m:5-39
-    pcl::console::print_highlight("Loading object point cloud...\n");
-    if (pcl::io::loadPLYFile<PointNT>(argv[2], *object) < 0) {
-        pcl::console::print_error("Error loading object file!\n");
-        return (1);
-    }
-    pcl::console::print_highlight("Loading scene point cloud...\n");
-    if (pcl::io::loadPLYFile<PointNT>(argv[3], *scene) < 0) {
-        pcl::console::print_error("Error loading scene file!\n");
-        return (1);
-    }
-    std::vector<PointCloudT::Ptr> empty_cloud_vec;
-    for(int i = 4; i < argc; i++){
-        empty_cloud_vec.push_back(PointCloudT::Ptr(new PointCloudT));
-        pcl::console::print_highlight("Loading empty scene point cloud...\n");
-        if (pcl::io::loadPLYFile<PointNT>(argv[i], *empty_cloud_vec.back()) < 0) {
+    std::vector<pcl::PointCloud<pcl::PointNormal>::Ptr> scene_clouds;
+    CommaSeparatedVector scene_files = vm["scene_files"].as<CommaSeparatedVector>();
+    for(std::string scene_file: scene_files.values){
+        scene_clouds.push_back(pcl::PointCloud<pcl::PointNormal>::Ptr(
+                                   new pcl::PointCloud<pcl::PointNormal>));
+        pcl::console::print_highlight(
+            "Loading scene point cloud: %s\n", scene_file.c_str());
+        if(pcl::io::loadPLYFile<pcl::PointNormal>(scene_file, *scene_clouds.back()) < 0){
             pcl::console::print_error("Error loading scene file!\n");
-            return (1);
+            return 1;
         }
     }
 
-    PointNT minPt, maxPt;
-    PointNT minPt2, maxPt2;
-    pcl::getMinMax3D(*object, minPt2, maxPt2);
+    std::vector<pcl::PointCloud<pcl::PointNormal>::Ptr> model_clouds;
+    CommaSeparatedVector model_files = vm["model_files"].as<CommaSeparatedVector>();
+    for(std::string model_file: model_files.values){
+        model_clouds.push_back(pcl::PointCloud<pcl::PointNormal>::Ptr(
+                                   new pcl::PointCloud<pcl::PointNormal>));
+        pcl::console::print_highlight(
+            "Loading model point cloud: %s\n", model_file.c_str());
+        if(pcl::io::loadPLYFile<pcl::PointNormal>(model_file, *model_clouds.back()) < 0){
+            pcl::console::print_error("Error loading model file!\n");
+            return 1;
+        }
+    }
+
+    std::vector<pcl::PointCloud<pcl::PointNormal>::Ptr> training_clouds;
+    if(vm.count("training_files")){
+        CommaSeparatedVector training_files = vm["training_files"].as<CommaSeparatedVector>();
+        for(std::string training_file: training_files.values){
+            training_clouds.push_back(pcl::PointCloud<pcl::PointNormal>::Ptr(
+                                          new pcl::PointCloud<pcl::PointNormal>));
+            pcl::console::print_highlight(
+                "Loading training point cloud: %s\n", training_file.c_str());
+            if(pcl::io::loadPLYFile<pcl::PointNormal>(training_file, *training_clouds.back()) < 0){
+                pcl::console::print_error("Error loading scene file!\n");
+                return 1;
+            }
+        }
+    }
+
+    pcl::PointNormal minPt, maxPt;
+    pcl::PointNormal minPt2, maxPt2;
+    pcl::getMinMax3D(*model_clouds[0], minPt2, maxPt2);
     float model_diam_x = maxPt2.x - minPt2.x;
     float model_diam_y = maxPt2.y - minPt2.y;
     float model_diam_z = maxPt2.z - minPt2.z;
-    pcl::getMaxSegment(*object, minPt, maxPt);
+    pcl::getMaxSegment(*model_clouds[0], minPt, maxPt);
     float model_diam = distance(minPt, maxPt);
+
+    float tau_d = vm["tau_d"].as<float>();
     float d_dist = tau_d * model_diam;
     float d_dist2 = d_dist * 1.25;
     float d_dist3 = d_dist * 1.5;
@@ -152,46 +236,58 @@ int main(int argc, char **argv){
 
     // Downsample
     pcl::console::print_info("Downsampling...\n");
-    int object_n = 50;
+    int model_n = 50;
     int scene_n = 50;
-    // int object_n = 1000;
+    // int model_n = 1000;
     // int scene_n = 500;
-    int empty_scene_n = 1000; pcl::console::print_info("Object size before filtering: %u (%u x %u)\n",
-                             object->size(), object->width, object->height);
-    // object = sequentialDownsample<PointNT>(object, object_n);
-    // object = randomDownsample<PointNT>(object, 2500.0/object->size());
-    object = voxelGridDownsample<PointNT>(object, d_dist);
-    pcl::console::print_info("Object size after filtering: %u (%u x %u)\n",
-                             object->size(), object-> width, object->height);
+    int empty_scene_n = 1000;
 
-    scene_orig = scene;
-    pcl::console::print_info("Scene size before filtering: %u (%u x %u)\n",
-                             scene->size(), scene->width, scene->height);
-    // scene = sequentialDownsample<PointNT>(scene, scene_n);
-    // scene = randomDownsample<PointNT>(scene, 2500.0/scene->size());
-    scene = voxelGridDownsample<PointNT>(scene, d_dist);
-    pcl::console::print_info("Scene size after filtering: %u (%u x %u)\n",
-                             scene->size(), scene->width, scene->height);
+    // shared_ptr &operator=(shared_ptr const &r) is equivalent to shared_ptr(r).swap(*this),
+    // so, in teach loop, the original cloud gets de-allocated when new_* goes out of scope.
+    // http://www.boost.org/doc/libs/1_60_0/libs/smart_ptr/shared_ptr.htm#assignment
+    for(pcl::PointCloud<pcl::PointNormal>::Ptr& model: model_clouds){
+        pcl::console::print_info("Model size before filtering: %u (%u x %u)\n",
+                                 model->size(), model->width, model->height);
+        // model = sequentialDownsample<pcl::PointNormal>(model, model_n);
+        // model = randomDownsample<pcl::PointNormal>(model, 2500.0/model->size());
+        pcl::PointCloud<pcl::PointNormal>::Ptr new_model =
+            voxelGridDownsample<pcl::PointNormal>(model, d_dist);
+        model = new_model;
+        pcl::console::print_info("Model size after filtering: %u (%u x %u)\n",
+                                 model->size(), model-> width, model->height);
+    }
 
+    for(pcl::PointCloud<pcl::PointNormal>::Ptr& scene: scene_clouds){
+        pcl::console::print_info("Scene size before filtering: %u (%u x %u)\n",
+                                 scene->size(), scene->width, scene->height);
+        // scene = sequentialDownsample<pcl::PointNormal>(scene, scene_n);
+        // scene = randomDownsample<pcl::PointNormal>(scene, 2500.0/scene->size());
+        pcl::PointCloud<pcl::PointNormal>::Ptr new_scene =
+            voxelGridDownsample<pcl::PointNormal>(scene, d_dist);
+        scene = new_scene;
+        pcl::console::print_info("Scene size after filtering: %u (%u x %u)\n",
+                                 scene->size(), scene-> width, scene->height);
+    }
 
-    for(int i = 0; i < empty_cloud_vec.size(); i++){
-        empty_scene = empty_cloud_vec[i];
-        pcl::console::print_info("Empty scene size before filtering: %u (%u x %u)\n",
-                                 empty_scene->size(), empty_scene->width, empty_scene->height);
-        // empty_scene = sequentialDownsample<PointNT>(empty_scene, empty_scene_n);
-        // scene = randomDownsample<PointNT>(empty_scene, 1000.0/empty_scene->size());
-        empty_scene = voxelGridDownsample<PointNT>(empty_scene, d_dist3);
-        pcl::console::print_info("Empty scene size after filtering: %u (%u x %u)\n",
-                                 empty_scene->size(), empty_scene->width, empty_scene->height);
-        empty_cloud_vec[i] = empty_scene;
+    for(pcl::PointCloud<pcl::PointNormal>::Ptr& training_cloud: training_clouds){
+        pcl::console::print_info(
+            "Training cloud size before filtering: %u (%u x %u)\n",
+            training_cloud->size(), training_cloud->width, training_cloud->height);
+        // training_cloud = sequentialDownsample<pcl::PointNormal>(training_cloud, training_cloud_n);
+        // training_cloud = randomDownsample<pcl::PointNormal>(training_cloud, 2500.0/training_cloud->size());
+        pcl::PointCloud<pcl::PointNormal>::Ptr new_training_cloud =
+            voxelGridDownsample<pcl::PointNormal>(training_cloud, d_dist3);
+        training_cloud = new_training_cloud;
+        pcl::console::print_info("Training cloud size after filtering: %u (%u x %u)\n",
+                                 training_cloud->size(), training_cloud-> width, training_cloud->height);
     }
 
     // // Estimate normals for object
     // pcl::console::print_highlight("Estimating object normals...\n");
-    // // pcl::NormalEstimationOMP<PointNT, PointNT> nest_obj;
-    // pcl::NormalEstimation<PointNT, PointNT> nest_obj;
+    // // pcl::NormalEstimationOMP<pcl::PointNormal, pcl::PointNormal> nest_obj;
+    // pcl::NormalEstimation<pcl::PointNormal, pcl::PointNormal> nest_obj;
     // nest_obj.setRadiusSearch(0.1);
-    // // pcl::search::KdTree<PointNT>::Ptr tree (new pcl::search::KdTree<PointNT>);
+    // // pcl::search::KdTree<pcl::PointNormal>::Ptr tree (new pcl::search::KdTree<pcl::PointNormal>);
     // // nest_obj.setSearchMethod (tree);
     // // nest_obj.setKSearch(15);
     // nest_obj.setInputCloud(object);
@@ -199,10 +295,10 @@ int main(int argc, char **argv){
 
     // // Estimate normals for scene
     // pcl::console::print_highlight("Estimating scene normals...\n");
-    // // pcl::NormalEstimationOMP<PointNT, PointNT> nest_scene;
-    // pcl::NormalEstimation<PointNT, PointNT> nest_scene;
+    // // pcl::NormalEstimationOMP<pcl::PointNormal, pcl::PointNormal> nest_scene;
+    // pcl::NormalEstimation<pcl::PointNormal, pcl::PointNormal> nest_scene;
     // nest_scene.setRadiusSearch(0.3);
-    // // pcl::search::KdTree<PointNT>::Ptr tree_scene (new pcl::search::KdTree<PointNT>);
+    // // pcl::search::KdTree<pcl::PointNormal>::Ptr tree_scene (new pcl::search::KdTree<pcl::PointNormal>);
     // // nest_obj.setSearchMethod (tree_scene);
     // // nest_scene.setKSearch(15);
     // nest_scene.setInputCloud(scene);
@@ -213,7 +309,8 @@ int main(int argc, char **argv){
     // MATLAB drost.m 59-63 model_description() and voting_scheme()
     // pass in object and scene, get back transformation matching object to scene
     // pcl::PointCloud<pcl::PointNormal> test_cloud = pcl::PointCloud<pcl::PointNormal>(*scene);
-    // pcl::PointCloud<pcl::PointNormal> *test_cloud2 = new pcl::PointCloud<pcl::PointNormal>(*scene);
+    // pcl::PointCloud<pcl::PointNormal> *test_cloud2 = new pcl::PointCloud<pcl::PointNormal>(
+    //     *scene_clouds[0]);
     // /* DEBUG */
     // fprintf(stderr, "foo0: %p, %lu, %lu\n", scene.get(), scene.get()->points.size(), scene.get()->size());
     // fprintf(stderr, "foo0: %p, %lu, %lu\n", &test_cloud, (&test_cloud)->points.size(), (&test_cloud)->size());
@@ -224,63 +321,96 @@ int main(int argc, char **argv){
     // ptr_test_cu3(*test_cloud2);
     // ptr_test_cu4(*test_cloud2);
     /* DEBUG */
-    float *model_weights = (float *)malloc(object->size()*sizeof(float));
-    Eigen::Matrix4f T = ppf_registration(scene.get(), object.get(), empty_cloud_vec,
-                                         d_dist, 1, model_weights);
+    // float *model_weights = (float *)malloc(model->size()*sizeof(float));
+    std::vector<std::vector<Eigen::Matrix4f>> results =
+        ppf_registration(scene_clouds, model_clouds, training_clouds,
+                         d_dist, vm["ref_point_df"].as<unsigned int>(),
+                         vm["dev"].as<int>(), NULL);
 
-    pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr color_cloud(new pcl::PointCloud<pcl::PointXYZRGBNormal>);
-    pcl::copyPointCloud(*object, *color_cloud);
-    for(int i = 0; i < object->size(); i++){
-        float weight = model_weights[i]/8;
-        uint8_t r = (uint8_t) (255*weight);
-        uint8_t g = (uint8_t) (165*weight);
-        uint8_t b = (uint8_t) (0*weight);
-        uint32_t rgb =
-            static_cast<uint32_t>(r) << 16 |
-            static_cast<uint32_t>(g) << 8  |
-            static_cast<uint32_t>(b);
-        (*color_cloud)[i].rgb = *reinterpret_cast<float *>(&rgb);
-    }
-    float3 t = {0, 0, 0};
-    float4 r = {0, 0, 0, 0};
-    // GenerateSceneWithModel(*object, *scene, t, r);
+    // pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr color_cloud(new pcl::PointCloud<pcl::PointXYZRGBNormal>);
+    // pcl::copyPointCloud(*model, *color_cloud);
+    // for(int i = 0; i < model->size(); i++){
+    //     float weight = model_weights[i]/8;
+    //     uint8_t r = (uint8_t) (255*weight);
+    //     uint8_t g = (uint8_t) (165*weight);
+    //     uint8_t b = (uint8_t) (0*weight);
+    //     uint32_t rgb =
+    //         static_cast<uint32_t>(r) << 16 |
+    //         static_cast<uint32_t>(g) << 8  |
+    //         static_cast<uint32_t>(b);
+    //     (*color_cloud)[i].rgb = *reinterpret_cast<float *>(&rgb);
+    // }
 
     // MATLAB drost.m:80-108
-    cout << T << endl;
-    pcl::transformPointCloudWithNormals(*object, *object_aligned, T);
-    boost::shared_ptr<pcl::visualization::PCLVisualizer> viewer(new pcl::visualization::PCLVisualizer ("3D Viewer"));
-    viewer->setBackgroundColor(0, 0, 0);
+    // cout << T << endl;
+    if(vm["visualize"].as<bool>()){
+        boost::shared_ptr<pcl::visualization::PCLVisualizer> viewer(
+            new pcl::visualization::PCLVisualizer ("3D Viewer"));
+        viewer->setBackgroundColor(0, 0, 0);
+        viewer->addCoordinateSystem (1.0, "coords", 0);
+        viewer->initCameraParameters();
 
-    // viewer->addPointCloud<PointNT>(scene_orig, "scene_orig");
-    // viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 0.5, "scene_orig");
+        // TODO: gather the cloud IDs and color handlers into vectors to de-allocate them later.
+        for(int i = 0; i < scene_clouds.size(); i++){
+            std::string *cloud_id = new std::string(str(boost::format("scene_%d") % i));
+            std::string *cloud_normals_id = new std::string(str(boost::format("scene_normals_%d") % i));
+            pcl::visualization::PointCloudColorHandlerCustom<pcl::PointNormal> *white_color =
+                new pcl::visualization::PointCloudColorHandlerCustom<pcl::PointNormal>(
+                    scene_clouds[i], 255, 255, 255);
 
-    ColorHandlerT blue_color(object, 0, 0, 255);
-    viewer->addPointCloud<PointNT>(scene, blue_color, "scene");
-    viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "scene");
-    viewer->addPointCloudNormals<PointNT, PointNT>(scene, scene, 1, 3, "scene_normals");
+            viewer->addPointCloud<pcl::PointNormal>(scene_clouds[i], *white_color, *cloud_id);
+            viewer->setPointCloudRenderingProperties(
+                pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, *cloud_id);
 
-    // ColorHandlerT red_color(object, 255, 0, 0);
-    // viewer->addPointCloud<PointNT>(object, red_color, "object");
-    // viewer->addPointCloudNormals<PointNT, PointNT>(object, object, 5, 0.05, "object_normals");
-    // viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "object");
+            if(vm["show_normals"].as<bool>()){
+                viewer->addPointCloudNormals<pcl::PointNormal, pcl::PointNormal>(
+                    scene_clouds[i], scene_clouds[i], 1, 3, *cloud_normals_id);
+            }
+        }
 
-    pcl::visualization::PointCloudColorHandlerRGBField<pcl::PointXYZRGBNormal> rgb_color(color_cloud);
-    viewer->addPointCloud<pcl::PointXYZRGBNormal>(color_cloud, rgb_color, "color_cloud");
-    viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "color_cloud");
+        // pcl::visualization::PointCloudColorHandlerCustom<pcl::PointNormal> red_color(model, 255, 0, 0);
+        // viewer->addPointCloud<pcl::PointNormal>(model, red_color, "model");
+        // viewer->addPointCloudNormals<pcl::PointNormal, pcl::PointNormal>(model, model, 5, 0.05, "model_normals");
+        // viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "model");
 
-    ColorHandlerT green_color(object_aligned, 0, 255, 0);
-    viewer->addPointCloud<PointNT>(object_aligned, green_color, "object_aligned");
-    viewer->addPointCloudNormals<PointNT, PointNT>(object_aligned, object_aligned,
-                                                   1, 3, "object_aligned_normals");
-    viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_COLOR, 1.0, 0.0, 0.0, "object_aligned_normals"); 
-    viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "object_aligned");
+        // pcl::visualization::PointCloudColorHandlerRGBField<pcl::PointXYZRGBNormal> rgb_color(color_cloud);
+        // viewer->addPointCloud<pcl::PointXYZRGBNormal>(color_cloud, rgb_color, "color_cloud");
+        // viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "color_cloud");
 
-    viewer->addCoordinateSystem (1.0, "foo", 0);
-    viewer->initCameraParameters ();
+        cycle_iterator<std::vector<uchar3>::iterator> color_it(colors.begin(), colors.end());
+        for(int i = 0; i < scene_clouds.size(); i++){
+            for(int j = 0; j < model_clouds.size(); j++){
+                pcl::PointCloud<pcl::PointNormal>::Ptr model_aligned(new pcl::PointCloud<pcl::PointNormal>);
+                pcl::transformPointCloudWithNormals(*model_clouds[j], *model_aligned, results[i][j]);
+                uchar3 color = *color_it++;
 
-    while (!viewer->wasStopped ()){
-        viewer->spinOnce(100);
-        boost::this_thread::sleep(boost::posix_time::microseconds(100000));
+                std::string *cloud_id = new std::string(
+                    str(boost::format("model_aligned_%d_%d") % i % j));
+                pcl::visualization::PointCloudColorHandlerCustom<pcl::PointNormal> *color_h =
+                    new pcl::visualization::PointCloudColorHandlerCustom<pcl::PointNormal>(
+                        model_aligned, color.x, color.y, color.z);
+
+                viewer->addPointCloud<pcl::PointNormal>(model_aligned, *color_h, *cloud_id);
+                viewer->setPointCloudRenderingProperties(
+                    pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, *cloud_id);
+
+                if(vm["show_normals"].as<bool>()){
+                    std::string *cloud_normals_id =
+                        new std::string(str(boost::format("model_aligned_normals_%d_%d") % i % j));
+                    viewer->addPointCloudNormals<pcl::PointNormal, pcl::PointNormal>(
+                        model_aligned, model_aligned, 1, 3, *cloud_normals_id);
+                    viewer->setPointCloudRenderingProperties(
+                        pcl::visualization::PCL_VISUALIZER_COLOR,
+                        color.x/255.0, color.y/255.0, color.z/255.0,
+                        *cloud_normals_id);
+                }
+            }
+        }
+
+        while (!viewer->wasStopped ()){
+            viewer->spinOnce(100);
+            boost::this_thread::sleep(boost::posix_time::microseconds(100000));
+        }
     }
 
 //    // // Estimate features

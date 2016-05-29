@@ -84,15 +84,14 @@ void ptr_test_cu4(const pcl::PointCloud<pcl::PointNormal> &scene_cloud){
 }
 
 
-Eigen::Matrix4f ppf_registration(pcl::PointCloud<pcl::PointNormal> *scene_cloud_ptr,
-                                 pcl::PointCloud<pcl::PointNormal> *object_cloud_ptr,
-                                 std::vector<pcl::PointCloud<pcl::PointNormal>::Ptr> empty_cloud_vec,
-                                 float d_dist, int devUse, float *model_weights){
-    // /* DEBUG */
-    // fprintf(stderr, "foo1: %p, %lu, %lu\n", scene_cloud_ptr, scene_cloud_ptr->points.size(), scene_cloud_ptr->size());
-    // /* DEBUG */
+std::vector<std::vector<Eigen::Matrix4f>> ppf_registration(
+    std::vector<pcl::PointCloud<pcl::PointNormal>::Ptr> scene_clouds,
+    std::vector<pcl::PointCloud<pcl::PointNormal>::Ptr> model_clouds,
+    std::vector<pcl::PointCloud<pcl::PointNormal>::Ptr> empty_clouds,
+    float d_dist, unsigned int ref_point_downsample_factor,
+    int devUse, float *model_weights){
     int *device_array = 0;
-    HANDLE_ERROR(cudaMalloc((void**)&device_array, 1024*sizeof(int)));
+    // HANDLE_ERROR(cudaMalloc((void**)&device_array, 1024*sizeof(int)));
 
     int numDevices;
     HANDLE_ERROR(cudaGetDeviceCount(&numDevices));
@@ -103,7 +102,7 @@ Eigen::Matrix4f ppf_registration(pcl::PointCloud<pcl::PointNormal> *scene_cloud_
         fprintf(stderr, "%d) name: %s\n", i, prop.name);
     }
     // HANDLE_ERROR(cudaSetDevice(devUse));
-    HANDLE_ERROR(cudaSetDevice(numDevices > 1 ? devUse : 0));
+    HANDLE_ERROR(cudaSetDevice(std::min(numDevices-1, devUse)));
     int devNum;
     HANDLE_ERROR(cudaGetDevice(&devNum));
     HANDLE_ERROR(cudaGetDeviceProperties(&prop, devNum));
@@ -116,58 +115,69 @@ Eigen::Matrix4f ppf_registration(pcl::PointCloud<pcl::PointNormal> *scene_cloud_
     fprintf(stderr, "blocks_multiproccount: %d\n", blocks);
     /* DEBUG */
 
-    // build model description
-    Model *model = new Model(object_cloud_ptr, d_dist);
+    std::vector<std::vector<Eigen::Matrix4f>> results;
 
-    // /* DEBUG */
-    // fprintf(stderr, "foo0: %d\n", scene_cloud_ptr->points.size());
-    // /* DEBUG */
-    Scene *scene = new Scene(scene_cloud_ptr, d_dist);
+    for(pcl::PointCloud<pcl::PointNormal>::Ptr scene_cloud: scene_clouds){
+        // build model description
+        // pcl::PointCloud<pcl::PointNormal> *scene_cloud_ptr = scene_clouds[0].get();
+        // pcl::PointCloud<pcl::PointNormal> *object_cloud_ptr = model_clouds[0].get();
 
-    // thrust::host_vector<float> optimal_weights(model->OptimizeWeights(empty_cloud_vec, 4));
-    // model->modelPointVoteWeights = thrust::device_vector<float>(optimal_weights);
-    for(int i = 0; i < object_cloud_ptr->size(); i++){
-        model_weights[i] = model->modelPointVoteWeights[i];
-    }
-    model->ppf_lookup(scene);
+        Scene *scene = new Scene(scene_cloud.get(), d_dist, ref_point_downsample_factor);
+        results.push_back(std::vector<Eigen::Matrix4f>());
 
-    // copy ppfs back to host
-    thrust::host_vector<float> transformations = thrust::host_vector<float>(model->getTransformations());
-    // thrust::host_vector<unsigned int> *maxval = new thrust::host_vector<unsigned int>(*model->maxval);
-    thrust::host_vector<float> *maxval =
-        new thrust::host_vector<float>(*model->vote_counts_out);
+        for(pcl::PointCloud<pcl::PointNormal>::Ptr model_cloud: model_clouds){
+            Model *model = new Model(model_cloud.get(), d_dist);
+            Eigen::Matrix4f T;
 
-    // write out transformations
-    // (*maxval)[0] is all the unallocated votes
-    float threshold = 0.8 * (*maxval)[1];
-    /* DEBUG */
-    fprintf(stderr, "threshold: %f\n", threshold);
-    /* DEBUG */
-    for (int i=1; (*maxval)[i] > threshold; i++){
-       cout << "num_votes: " << (*maxval)[i] << endl;
-       cout << "transforms(:,:," << i << ") = [";
-       for (int j=0; j<4; j++){
-           for (int k=0; k<4; k++){
-               cout << transformations[i*16+j*4+k] << " ";
-           }
-           cout << ";" << endl;
-       }
-       cout << "];" << endl;
-       cout << endl << endl;
-    }
+            // thrust::host_vector<float> optimal_weights(model->OptimizeWeights(empty_clouds, 4));
+            // model->modelPointVoteWeights = thrust::device_vector<float>(optimal_weights);
+            // for(int i = 0; i < object_cloud_ptr->size(); i++){
+            //     model_weights[i] = optimal_weights[i];
+            // }
+            model->ppf_lookup(scene);
 
-    Eigen::Matrix4f T;
-    for (int j=0; j<4; j++){
-        for (int k=0; k<4; k++){
-            // T(j,k) = transformations[16+j*4+k];
-            T(j,k) = transformations[j*4+k];
+            // copy ppfs back to host
+            // TODO: copy only the first transformations instead of the entire vector.
+            thrust::host_vector<float> transformations =
+                thrust::host_vector<float>(model->getTransformations());
+            // thrust::host_vector<unsigned int> *maxval = new thrust::host_vector<unsigned int>(*model->maxval);
+            // thrust::host_vector<float> *maxval =
+            //     new thrust::host_vector<float>(*model->vote_counts_out);
+
+            // write out transformations
+            // (*maxval)[0] is all the unallocated votes
+            // float threshold = 0.8 * (*maxval)[1];
+            // /* DEBUG */
+            // fprintf(stderr, "threshold: %f\n", threshold);
+            // /* DEBUG */
+            // for (int i=1; (*maxval)[i] > threshold; i++){
+            //    cout << "num_votes: " << (*maxval)[i] << endl;
+            //    cout << "transforms(:,:," << i << ") = [";
+            //    for (int j=0; j<4; j++){
+            //        for (int k=0; k<4; k++){
+            //            cout << transformations[i*16+j*4+k] << " ";
+            //        }
+            //        cout << ";" << endl;
+            //    }
+            //    cout << "];" << endl;
+            //    cout << endl << endl;
+            // }
+
+            for (int j=0; j<4; j++){
+                for (int k=0; k<4; k++){
+                    // T(j,k) = transformations[16+j*4+k];
+                    T(j,k) = transformations[j*4+k];
+                }
+            }
+            cout << T << endl;
+            results.back().push_back(T);
+            delete model;
         }
+        delete scene;
     }
 
-    delete model;
-    delete scene;
 
     cudaDeviceReset();
 
-    return T;
+    return results;
 }

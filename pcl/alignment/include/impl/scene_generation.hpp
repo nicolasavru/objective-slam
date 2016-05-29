@@ -15,10 +15,6 @@
 #include <pcl/features/fpfh_omp.h>
 #include <pcl/features/ppf.h>
 #include <pcl/filters/filter.h>
-#include <pcl/filters/voxel_grid.h>
-#include <pcl/keypoints/uniform_sampling.h>
-// #include <pcl/io/pcd_io.h>
-// #include <pcl/io/ply_io.h>
 #include <pcl/registration/icp.h>
 #include <pcl/registration/ppf_registration.h>
 #include <pcl/registration/sample_consensus_prerejective.h>
@@ -26,7 +22,6 @@
 #include <pcl/visualization/pcl_visualizer.h>
 #include <pcl/kdtree/kdtree_flann.h>
 #include <pcl/features/normal_3d.h>
-#include <pcl/filters/random_sample.h>
 
 #include "ppf.h"
 #include "vector_ops.h"

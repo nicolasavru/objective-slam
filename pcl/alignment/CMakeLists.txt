@@ -9,9 +9,11 @@ project(alignment)
 # set(PCL_DIR "/opt/pcl/src/pcl/build")
 find_package(PCL 1.7 REQUIRED)
 
+find_package(Boost REQUIRED COMPONENTS program_options)
+
 set(CMAKE_MODULE_PATH "/opt/pcl/src/pcl/cmake/Modules/" ${CMAKE_MODULE_PATH})
-# find_package(Eigen REQUIRED)
-find_package(Eigen3 REQUIRED)
+find_package(Eigen REQUIRED)
+# find_package(Eigen3 REQUIRED)
 
 #cuda info:
 # http://stackoverflow.com/questions/13073717/building-cuda-object-files-using-cmake
@@ -42,7 +44,7 @@ find_library(CUDADEVRT
 # CudaOptimize library
 find_library(CUDA_OPTIMIZE_LIB
    NAMES CudaOptimize
-   PATHS "C:/Program Files/CudaOptimize/" "/usr/" "/home/avru/Documents/Senior_Project/libcudaoptimize/libCudaOptimize-1.0.0-src/build_docker"
+   PATHS "C:/Program Files/CudaOptimize/" "/usr/" "/home/avru/Documents/Senior_Project/libcudaoptimize/libCudaOptimize-1.0.0-src/build"
    # PATH_SUFFIXES "lib"
    DOC "Location of CudaOptimize library"
    NO_DEFAULT_PATH
@@ -55,7 +57,8 @@ find_path(CUDAOPTIMIZE_INCLUDE_DIR
    NO_DEFAULT_PATH
    )
 
-include_directories(${PCL_INCLUDE_DIRS} ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/src ${CUDA_INCLUDE_DIRS} ${CUDAOPTIMIZE_INCLUDE_DIR})
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/src)
+include_directories(SYSTEM ${Boost_INCLUDE_DIRS} ${PCL_INCLUDE_DIRS} ${CUDA_INCLUDE_DIRS} ${CUDAOPTIMIZE_INCLUDE_DIR})
 
 link_directories(${PCL_LIBRARY_DIRS})
 add_definitions(${PCL_DEFINITIONS})
@@ -74,11 +77,11 @@ foreach(d ${vtk_flags})
 endforeach()
 
 # list(APPEND CUDA_LIBRARIES -lcudadevrt)
-set(CUDA_HOST_COMPILER "/usr/bin/g++-4.8")
-set(CMAKE_CXX_COMPILER "/usr/bin/g++-4.8")
+set(CUDA_HOST_COMPILER "/usr/bin/g++-5")
+set(CMAKE_CXX_COMPILER "/usr/bin/g++-5")
 
 # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --std=c++11 -D_MWAITXINTRIN_H_INCLUDED -D__STRICT_ANSI__ -D_FORCE_INLINES -O0 -g")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D_MWAITXINTRIN_H_INCLUDED -O0 -g")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D_MWAITXINTRIN_H_INCLUDED -O0 -g --std=c++11")
 
 if (UNIX OR APPLE)
     set (CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS};-Xcompiler;-fPIC)
@@ -93,7 +96,7 @@ set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS};--ftz=true;--prec-div=false;--prec-sqrt=f
 # CUDA_COMPILE(cuda_objs ${cuda})
 
 set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS} -Xcudafe "--diag_suppress=boolean_controlling_expr_is_constant")
-set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS} -I/home/avru/Documents/Senior_Project/thrust )
+# set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS} -I/home/avru/Documents/Senior_Project/thrust )
 
 set(CUDA_SEPARABLE_COMPILATION ON)
 
@@ -124,5 +127,5 @@ CUDA_ADD_LIBRARY(alignment_lib ${cuda} ${srcs})
 add_executable (alignment src/alignment.cpp)
 # set_property(TARGET alignment PROPERTY CXX_STANDARD 11)
 
-target_link_libraries (alignment alignment_lib ${PCL_LIBRARIES} ${CUDA_LIBRARIES} ${CUDADEVRT} ${CUDA_OPTIMIZE_LIB})
+target_link_libraries (alignment alignment_lib ${Boost_LIBRARIES} ${PCL_LIBRARIES} ${CUDA_LIBRARIES} ${CUDADEVRT} ${CUDA_OPTIMIZE_LIB})
 # target_link_libraries (test test_lib ${PCL_LIBRARIES} ${CUDA_LIBRARIES} ${CUDADEVRT} ${CUDA_OPTIMIZE_LIB})

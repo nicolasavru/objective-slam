@@ -16,7 +16,9 @@
 
 Scene::Scene(){}
 
-Scene::Scene(pcl::PointCloud<pcl::PointNormal> *cloud_ptr, float d_dist){
+// ref_point_downsample_factor defaults to 1 in scene.h
+Scene::Scene(pcl::PointCloud<pcl::PointNormal> *cloud_ptr, float d_dist,
+             unsigned int ref_point_downsample_factor){
     /* DEBUG */
     fprintf(stderr, "foo0: %d\n", cloud_ptr->size());
     /* DEBUG */
@@ -37,7 +39,8 @@ Scene::Scene(pcl::PointCloud<pcl::PointNormal> *cloud_ptr, float d_dist){
 
     this->d_dist = d_dist;
 
-    this->initPPFs(points, normals, cloud_ptr->size(), d_dist, 1);
+    this->initPPFs(points, normals, cloud_ptr->size(), d_dist,
+                   ref_point_downsample_factor);
     // thrust::host_vector<float3> *host_scene_modelnormals =
     //     new thrust::host_vector<float3>(*this->modelNormals);
     // for(int i = 0; i < host_scene_modelnormals->size(); i++){
@@ -64,7 +67,6 @@ Scene::Scene(pcl::PointCloud<pcl::PointNormal> *cloud_ptr, float d_dist){
     ppf_hash_kernel<<<blocks,BLOCK_SIZE>>>(RAW_PTR(this->modelPPFs),
                                            RAW_PTR(this->hashKeys),
                                            this->modelPPFs->size());
-
     // thrust::host_vector<std::size_t> *host_scene_hashkeys_init =
     //     new thrust::host_vector<std::size_t>(*this->hashKeys);
     // for(int i = 0; i < host_scene_hashkeys_init->size(); i++){
@@ -83,7 +85,7 @@ Scene::~Scene(){
 }
 
 void Scene::initPPFs(thrust::host_vector<float3> *points, thrust::host_vector<float3> *normals, int n,
-                     float d_dist, int ref_point_downsample_factor){
+                     float d_dist, unsigned int ref_point_downsample_factor){
     this->n = n;
     // check if these are used later or can be discarded after this function
     this->modelPoints = new thrust::device_vector<float3>(*points);
