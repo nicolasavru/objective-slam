@@ -25,6 +25,7 @@
 #include "kernel.h"
 #include "book.h"
 #include "transformation_clustering.h"
+#include "linalg.h"
 
 // This must be here, as opposed to in train_weights.cpp, due to linking issues.
 Model *MODEL_OBJ;
@@ -359,19 +360,9 @@ float Model::ScorePose(const float *weights, Eigen::Matrix4f truth,
         }
     }
 
-    float3 T_trans = {T(0,3), T(1,3), T(2,3)};
-    float3 truth_trans = {truth(0,3), truth(1,3), truth(2,3)};
-    float3 trans_diff = truth_trans - T_trans;
-
-    Eigen::AngleAxisf T_rot, truth_rot;
-    T_rot.fromRotationMatrix(T.block<3,3>(0,0));
-    truth_rot.fromRotationMatrix(truth.block<3,3>(0,0));
-    Eigen::AngleAxisf rotation_diff_mat(T_rot.inverse() * truth_rot);
-    /* DEBUG */
-    fprintf(stderr, "trans, rot: %f, %f\n", norm(trans_diff), fabsf(rotation_diff_mat.angle()));
-    /* DEBUG */
-    float score = norm(trans_diff)/this->d_dist + fabsf(rotation_diff_mat.angle())/D_ANGLE0;
-    // float score = 1 + fabsf(rotation_diff_mat.angle());
+    float2 dist = ht_dist(truth, T);
+    float score = dist.x/this->d_dist + dist.y/D_ANGLE0;
+    // float score = 1 + dist.y;
     return score;
 }
 

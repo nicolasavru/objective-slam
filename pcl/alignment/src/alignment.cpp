@@ -1,5 +1,9 @@
 #include <stdio.h>
 #include <stdlib.h>
+
+#include <iostream>
+#include <fstream>
+
 #include <boost/program_options.hpp>
 #include <boost/format.hpp>
 #include <Eigen/Core>
@@ -7,6 +11,7 @@
 #include <cuda_runtime.h>                // Stops underlining of __global__
 #include <pcl/point_types.h>
 #include <pcl/point_cloud.h>
+#include <pcl/common/angles.h>
 #include <pcl/common/distances.h>
 #include <pcl/common/geometry.h>
 #include <pcl/common/time.h>
@@ -35,6 +40,7 @@
 #include "impl/cycle_iterator.hpp"
 #include "impl/scene_generation.hpp"
 #include "impl/util.hpp"
+#include "linalg.h"
 
 // Types
 // typedef pcl::FPFHSignature33 FeatureT;
@@ -341,6 +347,27 @@ int main(int argc, char **argv){
     //     (*color_cloud)[i].rgb = *reinterpret_cast<float *>(&rgb);
     // }
 
+    if(vm.count("validation_files")){
+      CommaSeparatedVector validation_files = vm["validation_files"].as<CommaSeparatedVector>();
+      for(int i = 0; i < scene_clouds.size(); i++){
+        for(int j = 0; j < model_clouds.size(); j++){
+          ifstream validation_file_stream;
+          validation_file_stream.open(validation_files.values[i*model_clouds.size() + j]);
+          Eigen::Matrix4f truth;
+          validation_file_stream >> truth;
+          validation_file_stream.close();
+          cout << truth << std::endl;
+
+          float2 dist = ht_dist(results[i][j], truth);
+          bool match = dist.x < 0.1*model_diam && dist.y < pcl::deg2rad(12.0f);
+          /* DEBUG */
+          fprintf(stderr, "trans, rot, match: %f, %f, %d, %d, %f, %f\n", dist.x, dist.y,
+                  dist.x < 0.1*model_diam, dist.y < pcl::deg2rad(12.0f), 0.1*model_diam, pcl::deg2rad(12.0f));
+          /* DEBUG */
+
+        }
+      }
+    }
     // MATLAB drost.m:80-108
     // cout << T << endl;
     if(vm["visualize"].as<bool>()){

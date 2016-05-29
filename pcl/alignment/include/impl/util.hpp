@@ -1,6 +1,7 @@
 #ifndef UTIL_IMPL_H
 #define UTIL_IMPL_H
 
+#include <Eigen/Core>
 #include <thrust/device_vector.h>
 
 template <typename T>
@@ -39,5 +40,18 @@ template <typename T>
 void write_device_vector(const char *filename, thrust::device_vector<T> *data){
     write_device_array(filename, RAW_PTR(data), data->size());
 }
+
+// http://eigen.tuxfamily.org/bz/show_bug.cgi?id=622
+template<typename Derived>
+std::istream &operator>>(std::istream &s,
+                           Eigen::MatrixBase<Derived> &m){
+    for(int i = 0; i < m.rows(); ++i){
+        for(int j = 0; j < m.cols(); j++){
+            s >> m(i,j);
+        }
+    }
+    return s;
+}
+
 
 #endif /* UTIL_IMPL_H */
