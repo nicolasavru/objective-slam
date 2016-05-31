@@ -88,7 +88,7 @@ std::vector<std::vector<Eigen::Matrix4f>> ppf_registration(
     std::vector<pcl::PointCloud<pcl::PointNormal>::Ptr> scene_clouds,
     std::vector<pcl::PointCloud<pcl::PointNormal>::Ptr> model_clouds,
     std::vector<pcl::PointCloud<pcl::PointNormal>::Ptr> empty_clouds,
-    float d_dist, unsigned int ref_point_downsample_factor,
+    std::vector<float> model_d_dists, unsigned int ref_point_downsample_factor,
     int devUse, float *model_weights){
     int *device_array = 0;
     // HANDLE_ERROR(cudaMalloc((void**)&device_array, 1024*sizeof(int)));
@@ -117,16 +117,21 @@ std::vector<std::vector<Eigen::Matrix4f>> ppf_registration(
 
     std::vector<std::vector<Eigen::Matrix4f>> results;
 
-    for(pcl::PointCloud<pcl::PointNormal>::Ptr scene_cloud: scene_clouds){
+    for(int i = 0; i < scene_clouds.size(); i++){
+      pcl::PointCloud<pcl::PointNormal>::Ptr scene_cloud = scene_clouds[i];
         // build model description
         // pcl::PointCloud<pcl::PointNormal> *scene_cloud_ptr = scene_clouds[0].get();
         // pcl::PointCloud<pcl::PointNormal> *object_cloud_ptr = model_clouds[0].get();
 
-        Scene *scene = new Scene(scene_cloud.get(), d_dist, ref_point_downsample_factor);
         results.push_back(std::vector<Eigen::Matrix4f>());
 
-        for(pcl::PointCloud<pcl::PointNormal>::Ptr model_cloud: model_clouds){
-            Model *model = new Model(model_cloud.get(), d_dist);
+        for(int j = 0; j < model_clouds.size(); j++){
+            // The d_dist for the scene must match the d_dist for the model, so
+            // we need to re-compute (or at least re-downsample, which is about
+            // as expensive) the scene PPFs fpr each model.
+            Scene *scene = new Scene(scene_cloud.get(), model_d_dists[j], ref_point_downsample_factor);
+            pcl::PointCloud<pcl::PointNormal>::Ptr model_cloud = model_clouds[j];
+            Model *model = new Model(model_cloud.get(), model_d_dists[j]);
             Eigen::Matrix4f T;
 
             // thrust::host_vector<float> optimal_weights(model->OptimizeWeights(empty_clouds, 4));
@@ -172,8 +177,8 @@ std::vector<std::vector<Eigen::Matrix4f>> ppf_registration(
             cout << T << endl;
             results.back().push_back(T);
             delete model;
+            delete scene;
         }
-        delete scene;
     }
 
 

@@ -280,7 +280,7 @@ thrust::device_vector<float> *Model::ClusterTransformations(){
          RAW_PTR(trans_search_array.GetFirstHashkeyIndices()),
          RAW_PTR(trans_search_array.GetHashkeyToDataMap()),
          thrust::raw_pointer_cast(vote_counts_out->data()),
-         this->votes->size(), 2*this->d_dist);
+         this->votes->size(), this->d_dist);
     delete transIndices;
     return vote_counts_out;
 }

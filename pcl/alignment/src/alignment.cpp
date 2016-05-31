@@ -41,6 +41,7 @@
 #include "impl/scene_generation.hpp"
 #include "impl/util.hpp"
 #include "linalg.h"
+#include "kernel.h"
 
 // Types
 // typedef pcl::FPFHSignature33 FeatureT;
@@ -143,7 +144,8 @@ po::variables_map configure_options(int argc, char **argv){
     desc.add_options()
         ("help", "produce help message")
         ("dev", po::value<int>()->default_value(1), "CUDA device to use")
-        ("tau_d", po::value<float>()->default_value(0.030), "voxel grid factor")
+        ("tau_d", po::value<CommaSeparatedVector>()->multitoken()->required(), "voxel grid factors")
+        ("scene_leaf_size", po::value<float>()->default_value(10.0), "voxel grid factor")
         ("ref_point_df", po::value<unsigned int>()->default_value(1),
          "scene reference point downsample factor")
         ("scene_files", po::value<CommaSeparatedVector>()->multitoken()->required(),
@@ -180,6 +182,8 @@ int main(int argc, char **argv){
 
     // Load model and scene
     // MATLAB drost.m:5-39
+    float scene_leaf_size = vm["scene_leaf_size"].as<float>();
+    std::vector<float> scene_d_dists;
     std::vector<pcl::PointCloud<pcl::PointNormal>::Ptr> scene_clouds;
     CommaSeparatedVector scene_files = vm["scene_files"].as<CommaSeparatedVector>();
     for(std::string scene_file: scene_files.values){
@@ -189,21 +193,48 @@ int main(int argc, char **argv){
             "Loading scene point cloud: %s\n", scene_file.c_str());
         if(pcl::io::loadPLYFile<pcl::PointNormal>(scene_file, *scene_clouds.back()) < 0){
             pcl::console::print_error("Error loading scene file!\n");
-            return 1;
+            exit(1);
         }
+
+        scene_d_dists.push_back(scene_leaf_size);
+    }
+
+    std::vector<float> tau_d;
+    CommaSeparatedVector tau_d_strs = vm["tau_d"].as<CommaSeparatedVector>();
+    for(std::string tau_d_str: tau_d_strs.values){
+        tau_d.push_back(std::atof(tau_d_str.c_str()));
     }
 
     std::vector<pcl::PointCloud<pcl::PointNormal>::Ptr> model_clouds;
+    std::vector<float> model_d_dists;
     CommaSeparatedVector model_files = vm["model_files"].as<CommaSeparatedVector>();
-    for(std::string model_file: model_files.values){
+
+    if(tau_d.size() != model_files.values.size()){
+        pcl::console::print_error("Each model must have an associated tau_d.\n");
+        exit(1);
+    }
+    for(int i = 0; i < model_files.values.size(); i++){
+        std::string model_file = model_files.values[i];
         model_clouds.push_back(pcl::PointCloud<pcl::PointNormal>::Ptr(
                                    new pcl::PointCloud<pcl::PointNormal>));
+
         pcl::console::print_highlight(
             "Loading model point cloud: %s\n", model_file.c_str());
         if(pcl::io::loadPLYFile<pcl::PointNormal>(model_file, *model_clouds.back()) < 0){
             pcl::console::print_error("Error loading model file!\n");
-            return 1;
+            exit(1);
         }
+
+        pcl::PointNormal minPt, maxPt;
+        // Finding the max pairwise distance is epxensive, to
+        // approximate it with the max difference between coords.
+        pcl::getMinMax3D(*model_clouds.back(), minPt, maxPt);
+        float3 model_diam = {maxPt.x - minPt.x,
+                             maxPt.y - minPt.y,
+                             maxPt.z - minPt.z};
+        model_d_dists.push_back(tau_d[i]*max(model_diam));
+        fprintf(stderr, "model_diam, d_dist: (%f, %f, %f), %f\n",
+                model_diam.x, model_diam.y, model_diam.z, model_d_dists.back());
     }
 
     std::vector<pcl::PointCloud<pcl::PointNormal>::Ptr> training_clouds;
@@ -216,29 +247,12 @@ int main(int argc, char **argv){
                 "Loading training point cloud: %s\n", training_file.c_str());
             if(pcl::io::loadPLYFile<pcl::PointNormal>(training_file, *training_clouds.back()) < 0){
                 pcl::console::print_error("Error loading scene file!\n");
-                return 1;
+                exit(1);
             }
         }
     }
 
-    pcl::PointNormal minPt, maxPt;
-    pcl::PointNormal minPt2, maxPt2;
-    pcl::getMinMax3D(*model_clouds[0], minPt2, maxPt2);
-    float model_diam_x = maxPt2.x - minPt2.x;
-    float model_diam_y = maxPt2.y - minPt2.y;
-    float model_diam_z = maxPt2.z - minPt2.z;
-    pcl::getMaxSegment(*model_clouds[0], minPt, maxPt);
-    float model_diam = distance(minPt, maxPt);
-
-    float tau_d = vm["tau_d"].as<float>();
-    float d_dist = tau_d * model_diam;
-    float d_dist2 = d_dist * 1.25;
-    float d_dist3 = d_dist * 1.5;
-    /* DEBUG */
-    fprintf(stderr, "model_diam, d_dist: %f, %f\n", model_diam, d_dist);
-    fprintf(stderr, "model_diam_x, model_diam_y, model_diam_z: %f, %f, %f\n",
-            model_diam_x, model_diam_y, model_diam_z);
-    /* DEBUG */
+    float d_dist3 = 15;
 
     // Downsample
     pcl::console::print_info("Downsampling...\n");
@@ -251,28 +265,29 @@ int main(int argc, char **argv){
     // shared_ptr &operator=(shared_ptr const &r) is equivalent to shared_ptr(r).swap(*this),
     // so, in teach loop, the original cloud gets de-allocated when new_* goes out of scope.
     // http://www.boost.org/doc/libs/1_60_0/libs/smart_ptr/shared_ptr.htm#assignment
-    for(pcl::PointCloud<pcl::PointNormal>::Ptr& model: model_clouds){
-        pcl::console::print_info("Model size before filtering: %u (%u x %u)\n",
-                                 model->size(), model->width, model->height);
-        // model = sequentialDownsample<pcl::PointNormal>(model, model_n);
-        // model = randomDownsample<pcl::PointNormal>(model, 2500.0/model->size());
-        pcl::PointCloud<pcl::PointNormal>::Ptr new_model =
-            voxelGridDownsample<pcl::PointNormal>(model, d_dist);
-        model = new_model;
-        pcl::console::print_info("Model size after filtering: %u (%u x %u)\n",
-                                 model->size(), model-> width, model->height);
-    }
-
     for(pcl::PointCloud<pcl::PointNormal>::Ptr& scene: scene_clouds){
         pcl::console::print_info("Scene size before filtering: %u (%u x %u)\n",
                                  scene->size(), scene->width, scene->height);
         // scene = sequentialDownsample<pcl::PointNormal>(scene, scene_n);
         // scene = randomDownsample<pcl::PointNormal>(scene, 2500.0/scene->size());
         pcl::PointCloud<pcl::PointNormal>::Ptr new_scene =
-            voxelGridDownsample<pcl::PointNormal>(scene, d_dist);
+            voxelGridDownsample<pcl::PointNormal>(scene, scene_leaf_size);
         scene = new_scene;
         pcl::console::print_info("Scene size after filtering: %u (%u x %u)\n",
                                  scene->size(), scene-> width, scene->height);
+    }
+
+    for(int i = 0; i < model_clouds.size(); i++){
+        pcl::PointCloud<pcl::PointNormal>::Ptr model = model_clouds[i];
+        pcl::console::print_info("Model size before filtering: %u (%u x %u)\n",
+                                 model->size(), model->width, model->height);
+        // model = sequentialDownsample<pcl::PointNormal>(model, model_n);
+        // model = randomDownsample<pcl::PointNormal>(model, 2500.0/model->size());
+        pcl::PointCloud<pcl::PointNormal>::Ptr new_model =
+            voxelGridDownsample<pcl::PointNormal>(model, model_d_dists[i]);
+        pcl::console::print_info("Model size after filtering: %u (%u x %u)\n",
+                                 new_model->size(), new_model-> width, new_model->height);
+        model_clouds[i] = new_model;
     }
 
     for(pcl::PointCloud<pcl::PointNormal>::Ptr& training_cloud: training_clouds){
@@ -330,7 +345,7 @@ int main(int argc, char **argv){
     // float *model_weights = (float *)malloc(model->size()*sizeof(float));
     std::vector<std::vector<Eigen::Matrix4f>> results =
         ppf_registration(scene_clouds, model_clouds, training_clouds,
-                         d_dist, vm["ref_point_df"].as<unsigned int>(),
+                         model_d_dists, vm["ref_point_df"].as<unsigned int>(),
                          vm["dev"].as<int>(), NULL);
 
     // pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr color_cloud(new pcl::PointCloud<pcl::PointXYZRGBNormal>);
@@ -348,25 +363,26 @@ int main(int argc, char **argv){
     // }
 
     if(vm.count("validation_files")){
-      CommaSeparatedVector validation_files = vm["validation_files"].as<CommaSeparatedVector>();
-      for(int i = 0; i < scene_clouds.size(); i++){
-        for(int j = 0; j < model_clouds.size(); j++){
-          ifstream validation_file_stream;
-          validation_file_stream.open(validation_files.values[i*model_clouds.size() + j]);
-          Eigen::Matrix4f truth;
-          validation_file_stream >> truth;
-          validation_file_stream.close();
-          cout << truth << std::endl;
+        CommaSeparatedVector validation_files = vm["validation_files"].as<CommaSeparatedVector>();
+        for(int i = 0; i < scene_clouds.size(); i++){
+            for(int j = 0; j < model_clouds.size(); j++){
+                ifstream validation_file_stream;
+                validation_file_stream.open(validation_files.values[i*model_clouds.size() + j]);
+                Eigen::Matrix4f truth;
+                validation_file_stream >> truth;
+                validation_file_stream.close();
+                cout << truth << std::endl;
 
-          float2 dist = ht_dist(results[i][j], truth);
-          bool match = dist.x < 0.1*model_diam && dist.y < pcl::deg2rad(12.0f);
-          /* DEBUG */
-          fprintf(stderr, "trans, rot, match: %f, %f, %d, %d, %f, %f\n", dist.x, dist.y,
-                  dist.x < 0.1*model_diam, dist.y < pcl::deg2rad(12.0f), 0.1*model_diam, pcl::deg2rad(12.0f));
-          /* DEBUG */
+                float model_diam = model_d_dists[j] / tau_d[j];
+                float2 dist = ht_dist(results[i][j], truth);
+                bool match = dist.x < 0.1*model_diam && dist.y < pcl::deg2rad(12.0f);
+                /* DEBUG */
+                fprintf(stderr, "trans, rot, match: %f, %f, %d, %d, %f, %f\n", dist.x, dist.y,
+                        dist.x < 0.2*model_diam, dist.y < pcl::deg2rad(24.0f), 0.1*model_diam, pcl::deg2rad(12.0f));
+                /* DEBUG */
 
+            }
         }
-      }
     }
     // MATLAB drost.m:80-108
     // cout << T << endl;

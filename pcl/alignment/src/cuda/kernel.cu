@@ -62,6 +62,22 @@ __host__ __device__ float norm(float4 v){
     return sqrtf(dot(v, v));
 }
 
+__host__ __device__ float max(float3 v){
+    return max(v.x, max(v.y, v.z));
+}
+
+__host__ __device__ float max(float4 v){
+    return max(v.x, max(v.y, max(v.z, v.w)));
+}
+
+__host__ __device__ float min(float3 v){
+    return min(v.x, min(v.y, v.z));
+}
+
+__host__ __device__ float min(float4 v){
+    return min(v.x, min(v.y, min(v.z, v.w)));
+}
+
 __host__ __device__  float3 cross(float3 u, float3 v){
     float3 w = {u.y*v.z - u.z*v.y,
                 u.z*v.x - u.x*v.z,

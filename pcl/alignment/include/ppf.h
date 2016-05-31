@@ -21,7 +21,7 @@ std::vector<std::vector<Eigen::Matrix4f>> ppf_registration(
     std::vector<pcl::PointCloud<pcl::PointNormal>::Ptr> scene_clouds,
     std::vector<pcl::PointCloud<pcl::PointNormal>::Ptr> model_clouds,
     std::vector<pcl::PointCloud<pcl::PointNormal>::Ptr> empty_clouds,
-    float d_dist, unsigned int ref_point_downsample_factor,
+    std::vector<float> model_d_dists, unsigned int ref_point_downsample_factor,
     int devUse, float *model_weights);
 
 #endif /* __PPF_H */
