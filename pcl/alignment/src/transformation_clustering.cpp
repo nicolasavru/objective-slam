@@ -63,15 +63,12 @@ void clusterPoses(PoseWithVotesList &poses, PoseWithVotesList &result,
     fprintf(stderr, "Clustering poses ...\n");
   // Start off by sorting the poses by the number of votes
   sort(poses.begin(), poses.end(), poseWithVotesCompareFunction);
-  /* DEBUG */
-  fprintf(stderr, "aaa1\n");
-  /* DEBUG */
   std::vector<PoseWithVotesList> clusters;
   std::vector<std::pair<size_t, unsigned int> > cluster_votes;
   for (size_t poses_i = 0; poses_i < poses.size(); ++ poses_i)
   {
       /* DEBUG */
-      fprintf(stderr, "pose, nclusters: %lu, %lu\n", poses_i, clusters.size());
+      fprintf(stdout, "pose, nclusters: %lu, %lu\n", poses_i, clusters.size());
       /* DEBUG */
     bool found_cluster = false;
     for (size_t clusters_i = 0; clusters_i < clusters.size(); ++ clusters_i)
@@ -95,17 +92,11 @@ void clusterPoses(PoseWithVotesList &poses, PoseWithVotesList &result,
       cluster_votes.push_back (std::pair<size_t, unsigned int> (clusters.size () - 1, poses[poses_i].votes));
     }
  }
-  /* DEBUG */
-  fprintf(stderr, "bbb1\n");
-  /* DEBUG */
   // Sort clusters by total number of votes
   std::sort (cluster_votes.begin (), cluster_votes.end (), clusterVotesCompareFunction);
   // Compute pose average and put them in result vector
   /// @todo some kind of threshold for determining whether a cluster has enough votes or not...
   /// now just taking the first three clusters
-  /* DEBUG */
-  fprintf(stderr, "ccc1\n");
-  /* DEBUG */
   result.clear ();
   size_t max_clusters = (clusters.size () < 3) ? clusters.size () : 3;
   for (size_t cluster_i = 0; cluster_i < max_clusters; ++ cluster_i){
@@ -119,23 +110,14 @@ void clusterPoses(PoseWithVotesList &poses, PoseWithVotesList &result,
       /// averaging rotations by just averaging the quaternions in 4D space - reference "On Averaging Rotations" by CLAUS GRAMKOW
       rotation_average += Eigen::Quaternionf (v_it->pose.rotation ()).coeffs ();
     }
-    /* DEBUG */
-    fprintf(stderr, "ddd1\n");
-    /* DEBUG */
     translation_average /= static_cast<float> (clusters[cluster_votes[cluster_i].first].size ());
     rotation_average /= static_cast<float> (clusters[cluster_votes[cluster_i].first].size ());
 
     Eigen::Affine3f transform_average;
     transform_average.translation ().matrix () = translation_average;
     transform_average.linear ().matrix () = Eigen::Quaternionf (rotation_average).normalized().toRotationMatrix ();
-    /* DEBUG */
-    fprintf(stderr, "eee1\n");
-    /* DEBUG */
     result.push_back (PoseWithVotes (transform_average, cluster_votes[cluster_i].second));
   }
-  /* DEBUG */
-  fprintf(stderr, "fff1\n");
-  /* DEBUG */
 }
 
 

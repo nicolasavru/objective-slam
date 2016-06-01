@@ -10,13 +10,15 @@
 #include <thrust/host_vector.h>
 
 #include "impl/parallel_hash_array.hpp"
+#include "transformation_clustering.h"
 #include "scene.h"
 #include "debug.h"
 
 class Model : public Scene {
 
   public:
-    Model(pcl::PointCloud<pcl::PointNormal> *cloud, float d_dist);
+    Model(pcl::PointCloud<pcl::PointNormal> *cloud, float d_dist,
+          float vote_count_threshold, bool cpu_clustering);
     ~Model();
 
     void SetModelPointVoteWeights(thrust::device_vector<float> modelPointVoteWeights);
@@ -27,7 +29,7 @@ class Model : public Scene {
                               thrust::device_vector<float> modelpoint_vote_weights);
     void ComputeTransformations(Scene *scene);
     thrust::device_vector<float> *ClusterTransformations();
-    thrust::device_vector<float> *ClusterTransformationsCPU();
+    PoseWithVotesList ClusterTransformationsCPU();
 
     float ScorePose(const float *weights, Eigen::Matrix4f truth,
                     pcl::PointCloud<pcl::PointNormal> scene);
@@ -40,6 +42,9 @@ class Model : public Scene {
     pcl::PointCloud<pcl::PointNormal> *cloud_ptr;
     // private:
   public:
+
+        float vote_count_threshold;
+        bool cpu_clustering;
 
         // ppfCount[i] is the number of PPFs whose hash is hashKeys[i];
         thrust::device_vector<unsigned int> *ppfCount;
@@ -85,7 +90,9 @@ class Model : public Scene {
 
         // transformations stores 4 by 4 arrays of transformation matrices
         // however it uses linear indexing
+        // TODO: replace with a union
         thrust::device_vector<float> transformations;
+        PoseWithVotesList cpu_transformations;
 
         thrust::device_vector<float4> *transformation_rots;
         thrust::device_vector<float3> *transformation_trans;

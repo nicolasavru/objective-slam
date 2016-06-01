@@ -89,7 +89,8 @@ std::vector<std::vector<Eigen::Matrix4f>> ppf_registration(
     std::vector<pcl::PointCloud<pcl::PointNormal>::Ptr> model_clouds,
     std::vector<pcl::PointCloud<pcl::PointNormal>::Ptr> empty_clouds,
     std::vector<float> model_d_dists, unsigned int ref_point_downsample_factor,
-    int devUse, float *model_weights){
+    float vote_count_threshold, bool cpu_clustering, int devUse,
+    float *model_weights){
     int *device_array = 0;
     // HANDLE_ERROR(cudaMalloc((void**)&device_array, 1024*sizeof(int)));
 
@@ -131,8 +132,8 @@ std::vector<std::vector<Eigen::Matrix4f>> ppf_registration(
             // as expensive) the scene PPFs fpr each model.
             Scene *scene = new Scene(scene_cloud.get(), model_d_dists[j], ref_point_downsample_factor);
             pcl::PointCloud<pcl::PointNormal>::Ptr model_cloud = model_clouds[j];
-            Model *model = new Model(model_cloud.get(), model_d_dists[j]);
-            Eigen::Matrix4f T;
+            Model *model = new Model(model_cloud.get(), model_d_dists[j], vote_count_threshold,
+                                     cpu_clustering);
 
             // thrust::host_vector<float> optimal_weights(model->OptimizeWeights(empty_clouds, 4));
             // model->modelPointVoteWeights = thrust::device_vector<float>(optimal_weights);
@@ -141,39 +142,21 @@ std::vector<std::vector<Eigen::Matrix4f>> ppf_registration(
             // }
             model->ppf_lookup(scene);
 
-            // copy ppfs back to host
-            // TODO: copy only the first transformations instead of the entire vector.
-            thrust::host_vector<float> transformations =
-                thrust::host_vector<float>(model->getTransformations());
-            // thrust::host_vector<unsigned int> *maxval = new thrust::host_vector<unsigned int>(*model->maxval);
-            // thrust::host_vector<float> *maxval =
-            //     new thrust::host_vector<float>(*model->vote_counts_out);
-
-            // write out transformations
-            // (*maxval)[0] is all the unallocated votes
-            // float threshold = 0.8 * (*maxval)[1];
-            // /* DEBUG */
-            // fprintf(stderr, "threshold: %f\n", threshold);
-            // /* DEBUG */
-            // for (int i=1; (*maxval)[i] > threshold; i++){
-            //    cout << "num_votes: " << (*maxval)[i] << endl;
-            //    cout << "transforms(:,:," << i << ") = [";
-            //    for (int j=0; j<4; j++){
-            //        for (int k=0; k<4; k++){
-            //            cout << transformations[i*16+j*4+k] << " ";
-            //        }
-            //        cout << ";" << endl;
-            //    }
-            //    cout << "];" << endl;
-            //    cout << endl << endl;
-            // }
-
-            for (int j=0; j<4; j++){
-                for (int k=0; k<4; k++){
-                    // T(j,k) = transformations[16+j*4+k];
-                    T(j,k) = transformations[j*4+k];
+            Eigen::Matrix4f T;
+            if(cpu_clustering){
+                T = model->cpu_transformations[0].pose.matrix();
+            }
+            else{
+                // TODO: copy only the first transformations instead of the entire vector.
+                thrust::host_vector<float> transformations =
+                    thrust::host_vector<float>(model->getTransformations());
+                for(int j=0; j<4; j++){
+                    for(int k=0; k<4; k++){
+                        T(j,k) = transformations[j*4+k];
+                    }
                 }
             }
+
             cout << T << endl;
             results.back().push_back(T);
             delete model;

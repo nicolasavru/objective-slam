@@ -755,50 +755,6 @@ __global__ void trans2idx_kernel(float3 *translations,
     }
 }
 
-__global__ void rot_clustering_kernel_helper(float3 *translations,
-                                             float4 *quaternions,
-                                             float *vote_counts,
-                                             std::size_t thisFirstTransIndex,
-                                             std::size_t thisTransCount,
-                                             std::size_t *key2transMap,
-                                             float *vote_counts_out,
-                                             float trans_thresh){
-    if(thisTransCount <= 1) return;
-
-    int ind = threadIdx.x;
-    int idx = ind + blockIdx.x * blockDim.x;
-
-    float rot_thresh_sq = ROT_THRESH*ROT_THRESH;
-
-    while(idx < thisTransCount){
-        __shared__ unsigned int Svotecounts[BLOCK_SIZE];
-
-        float3 thisTrans = translations[idx];
-        float4 thisQuat  = quaternions[idx];
-        float vote_count_out = 0;
-
-        unsigned int thisTransIndex = key2transMap[thisFirstTransIndex+idx];
-        float quatDiff =
-            fabsf(8*(1-dot(thisQuat, quaternions[thisTransIndex])));
-        if(quatDiff < rot_thresh_sq){
-            float normDiffTrans =
-                norm(thisTrans - translations[thisTransIndex]);
-            if(normDiffTrans < trans_thresh){
-                Svotecounts[ind] = vote_counts[thisTransIndex];
-            }
-        }
-        __syncthreads();
-        if(ind == BLOCK_SIZE-1){
-            for(int i = 0; i < ind; i++){
-                    vote_count_out += Svotecounts[i];
-            }
-            vote_counts_out[idx] = vote_count_out;
-        }
-        idx += blockDim.x * gridDim.x;
-    }
-}
-
-
 
 __global__ void rot_clustering_kernel(float3 *translations,
                                       float4 *quaternions,
@@ -824,18 +780,11 @@ __global__ void rot_clustering_kernel(float3 *translations,
             unsigned int thisAdjacentHash = adjacent_trans_hash[27*idx+adjacent_block];
             unsigned int thisAdjacentHashIndex = transIndices[27*idx+adjacent_block];
             if(thisAdjacentHash == 0 ||
-               thisAdjacentHash != transKeys[thisAdjacentHashIndex]
-               ){
+               thisAdjacentHash != transKeys[thisAdjacentHashIndex]){
                 continue;
             }
             unsigned int thisTransCount = transCount[thisAdjacentHashIndex];
             unsigned int thisFirstTransIndex = firstTransIndex[thisAdjacentHashIndex];
-
-            // Dynamic parallelism is broken in CUDA 6.5.
-            // int blocks = min(((int) (thisTransCount + BLOCK_SIZE - 1)) / BLOCK_SIZE, MAX_NBLOCKS);
-            // rot_clustering_kernel_helper<<<blocks,BLOCK_SIZE>>>
-            //     (translations, quaternions, vote_counts, thisFirstTransIndex, thisTransCount,
-            //      key2transMap, vote_counts_out, trans_thresh);
 
             for(int j = 0; j < thisTransCount; j++){
                 unsigned int thisTransIndex = key2transMap[thisFirstTransIndex+j];

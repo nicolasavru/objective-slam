@@ -58,7 +58,8 @@ struct float16 {
     float f[16];
 };
 
-Model::Model(pcl::PointCloud<pcl::PointNormal> *cloud, float d_dist){
+Model::Model(pcl::PointCloud<pcl::PointNormal> *cloud, float d_dist,
+             float vote_count_threshold, bool cpu_clustering){
     this->cloud_ptr = cloud;
     thrust::host_vector<float3> *points =
         new thrust::host_vector<float3>(cloud_ptr->size());
@@ -75,6 +76,8 @@ Model::Model(pcl::PointCloud<pcl::PointNormal> *cloud, float d_dist){
     }
 
     this->d_dist = d_dist;
+    this->vote_count_threshold = vote_count_threshold;
+    this->cpu_clustering = cpu_clustering;
     this->initPPFs(points, normals, cloud_ptr->size(), d_dist);
     this->modelPointVoteWeights = thrust::device_vector<float>(n, 1.0);
 
@@ -124,6 +127,9 @@ Model::Model(pcl::PointCloud<pcl::PointNormal> *cloud, float d_dist){
 
 Model::~Model(){
     // TODO
+    if(!this->cpu_clustering){
+        delete this->vote_counts_out;
+    }
 }
 
 void Model::SetModelPointVoteWeights(thrust::device_vector<float> modelPointVoteWeights){
@@ -197,20 +203,22 @@ void Model::ComputeUniqueVotes(Scene *scene){
                         this->votes->begin(),
                         thrust::greater<float>());
 
-    std::size_t num_top_votes = thrust::count_if
-        (voteCounts->begin(), voteCounts->end(), is_greaterthan<10>());
-    /* DEBUG */
-    fprintf(stderr, "num_top_votes: %lu\n", num_top_votes);
-    /* DEBUG */
-    this->votes->resize(num_top_votes);
-    this->voteCounts->resize(num_top_votes);
-
     thrust::host_vector<unsigned int> temp_votecounts(*this->voteCounts);
     /* DEBUG */
     fprintf(stderr, "1, 5, 10, 50: %u, %u, %u, %u\n",
             temp_votecounts[1], temp_votecounts[5],
             temp_votecounts[10], temp_votecounts[50]);
     /* DEBUG */
+
+    float min_votecount = vote_count_threshold * temp_votecounts[0];
+    std::size_t num_top_votes = thrust::count_if(
+      voteCounts->begin(), voteCounts->end(),
+      [min_votecount] __device__ (unsigned int x){ return x > min_votecount; });
+    /* DEBUG */
+    fprintf(stderr, "num_top_votes: %lu\n", num_top_votes);
+    /* DEBUG */
+    this->votes->resize(num_top_votes);
+    this->voteCounts->resize(num_top_votes);
 }
 
 thrust::device_vector<float>
@@ -285,43 +293,26 @@ thrust::device_vector<float> *Model::ClusterTransformations(){
     return vote_counts_out;
 }
 
-thrust::device_vector<float> *Model::ClusterTransformationsCPU(){
+PoseWithVotesList Model::ClusterTransformationsCPU(){
     thrust::host_vector<float> transformations(this->transformations);
     thrust::host_vector<float> vote_counts(*this->voteCounts);
     PoseWithVotesList transformations_list = PoseWithVotesList();
     for(int i = 0; i < this->votes->size(); i++){
-        Eigen::Affine3f transmat;
+        Eigen::Matrix4f transmat;
         float vote_count = (float) vote_counts[i];
         memcpy(transmat.data(), transformations.data()+ 16*i, 16*sizeof(float));
-        transformations_list.push_back(PoseWithVotes(transmat, vote_count));
+        // Eigen is column-major by default.
+        transmat.transposeInPlace();
+        Eigen::Affine3f transaff;
+        transaff = transmat;
+        transformations_list.push_back(PoseWithVotes(transaff, vote_count));
     }
 
     PoseWithVotesList clustered_transformations_list = PoseWithVotesList();
     clusterPoses(transformations_list, clustered_transformations_list,
-                 3*this->d_dist, D_ANGLE0);
+                 this->d_dist, D_ANGLE0);
 
-    thrust::device_vector<float> *foo = new thrust::device_vector<float>();
-    return foo;
-
-
-    // thrust::device_vector<float3> transformation_trans =
-    //     thrust::device_vector<float3>(this->votes->size());
-    // thrust::device_vector<float4> transformation_rots =
-    //     thrust::device_vector<float4>(this->votes->size());
-    // /* DEBUG */
-    // fprintf(stderr, "aaa\n");
-    // /* DEBUG */
-    // int blocks = std::min(((int)(this->votes->size()) + BLOCK_SIZE - 1) / BLOCK_SIZE, MAX_NBLOCKS);
-    // mat2transquat_kernel<<<blocks,BLOCK_SIZE>>>
-    //     (thrust::raw_pointer_cast(this->transformations.data()),
-    //      thrust::raw_pointer_cast(transformation_trans.data()),
-    //      thrust::raw_pointer_cast(transformation_rots.data()),
-    //      this->votes->size());
-    // /* DEBUG */
-    // fprintf(stderr, "bbb\n");
-    // /* DEBUG */
-
-    // return vote_counts_out;
+    return clustered_transformations_list;
 }
 
 float Model::ScorePose(const float *weights, Eigen::Matrix4f truth,
@@ -440,22 +431,27 @@ void Model::ppf_lookup(Scene *scene){
                                   *(this->voteCounts),
                                   this->modelPointVoteWeights);
 
-    this->vote_counts_out = ClusterTransformations();
-    // this->vote_counts_out = ClusterTransformationsCPU();
+    if(this->cpu_clustering){
+        this->cpu_transformations = ClusterTransformationsCPU();
+    }
+    else{
+        this->vote_counts_out = ClusterTransformations();
+        thrust::sort_by_key(
+            this->vote_counts_out->begin(),
+            this->vote_counts_out->end(),
+            thrust::device_ptr<struct float16>(
+                (struct float16 *)thrust::raw_pointer_cast(this->transformations.data())),
+            thrust::greater<unsigned int>());
+    }
 
-    thrust::sort_by_key(this->vote_counts_out->begin(),
-                        this->vote_counts_out->end(),
-                        thrust::device_ptr<struct float16>((struct float16 *) thrust::raw_pointer_cast(this->transformations.data())),
-                        thrust::greater<unsigned int>());
-
-    #ifdef DEBUG
-        // end cuda timer
-        HANDLE_ERROR(cudaEventRecord(stop, 0));
-        HANDLE_ERROR(cudaEventSynchronize(stop));
-        float elapsedTime;
-        HANDLE_ERROR(cudaEventElapsedTime(&elapsedTime, start, stop));
-        fprintf(stderr, "Time to lookup model:  %3.1f ms\n", elapsedTime);
-    #endif
+#ifdef DEBUG
+    // end cuda timer
+    HANDLE_ERROR(cudaEventRecord(stop, 0));
+    HANDLE_ERROR(cudaEventSynchronize(stop));
+    float elapsedTime;
+    HANDLE_ERROR(cudaEventElapsedTime(&elapsedTime, start, stop));
+    fprintf(stderr, "Time to lookup model:  %3.1f ms\n", elapsedTime);
+#endif
 }
 
 void Model::accumulateVotes(){

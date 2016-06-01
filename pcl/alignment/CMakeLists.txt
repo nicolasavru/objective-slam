@@ -91,8 +91,10 @@ if(NOT UNIX OR APPLE)
     add_definitions(-DPCLAPI_EXPORTS)
 endif()
 
-# set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS} "--ftz=true --prec-div=false --prec-sqrt=false -arch=sm_35 -DTHRUST_DEBUG -G -g")
-set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS};--ftz=true;--prec-div=false;--prec-sqrt=false;-arch=sm_35;-DTHRUST_DEBUG;-g)
+set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS};--ftz=true;--prec-div=false;--prec-sqrt=false;-arch=sm_35;--expt-extended-lambda)
+set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS};-DTHRUST_DEBUG;-g)
+# set(CUDA_NVCC_FLAGS -G)
+
 # CUDA_COMPILE(cuda_objs ${cuda})
 
 set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS} -Xcudafe "--diag_suppress=boolean_controlling_expr_is_constant")

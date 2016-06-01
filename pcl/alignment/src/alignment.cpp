@@ -143,11 +143,19 @@ po::variables_map configure_options(int argc, char **argv){
     po::options_description desc("Allowed options");
     desc.add_options()
         ("help", "produce help message")
+        // runstate parameters
         ("dev", po::value<int>()->default_value(1), "CUDA device to use")
+
+        // algorithm parameters
         ("tau_d", po::value<CommaSeparatedVector>()->multitoken()->required(), "voxel grid factors")
         ("scene_leaf_size", po::value<float>()->default_value(10.0), "voxel grid factor")
         ("ref_point_df", po::value<unsigned int>()->default_value(1),
          "scene reference point downsample factor")
+        ("vote_count_threshold", po::value<float>()->default_value(0.4),
+         "percentile of vote counts which are discarded")
+        ("cpu_clustering", po::value<bool>()->default_value(false), "whether to cluster on the cpu")
+
+        // input files
         ("scene_files", po::value<CommaSeparatedVector>()->multitoken()->required(),
          "ply files to find models in")
         ("model_files", po::value<CommaSeparatedVector>()->multitoken()->required(),
@@ -156,6 +164,8 @@ po::variables_map configure_options(int argc, char **argv){
          "ply files to generate training scenes with")
         ("validation_files", po::value<CommaSeparatedVector>()->multitoken(),
          "file with ground truth transformations for models in scenes")
+
+        // output parameters
         ("show_normals", po::value<bool>()->default_value(true), "whether to display normals")
         ("visualize", po::value<bool>()->default_value(true),
          "whether to visualize the scenes and models or only return text output")
@@ -346,7 +356,9 @@ int main(int argc, char **argv){
     std::vector<std::vector<Eigen::Matrix4f>> results =
         ppf_registration(scene_clouds, model_clouds, training_clouds,
                          model_d_dists, vm["ref_point_df"].as<unsigned int>(),
-                         vm["dev"].as<int>(), NULL);
+                         vm["vote_count_threshold"].as<float>(),
+                         vm["cpu_clustering"].as<bool>(), vm["dev"].as<int>(),
+                         NULL);
 
     // pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr color_cloud(new pcl::PointCloud<pcl::PointXYZRGBNormal>);
     // pcl::copyPointCloud(*model, *color_cloud);
