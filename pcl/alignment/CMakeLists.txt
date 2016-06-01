@@ -9,7 +9,8 @@ project(alignment)
 # set(PCL_DIR "/opt/pcl/src/pcl/build")
 find_package(PCL 1.7 REQUIRED)
 
-find_package(Boost REQUIRED COMPONENTS program_options)
+add_definitions(-DBOOST_ALL_DYN_LINK)
+find_package(Boost REQUIRED COMPONENTS program_options log)
 
 set(CMAKE_MODULE_PATH "/opt/pcl/src/pcl/cmake/Modules/" ${CMAKE_MODULE_PATH})
 find_package(Eigen REQUIRED)

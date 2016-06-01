@@ -1,8 +1,9 @@
 #include <algorithm>
 #include <iterator>
 #include <stdio.h>
+#include <boost/format.hpp>
+#include <boost/log/trivial.hpp>
 #include <cuda.h>
-#include <cuda_runtime.h>                // Stops underlining of __global__
 #include <Eigen/Geometry>
 #include <pcl/point_types.h>
 #include <pcl/point_cloud.h>
@@ -163,7 +164,7 @@ void Model::ComputeUniqueVotes(Scene *scene){
         new thrust::host_vector<std::size_t>(*ppf_vote_indices);
 
     std::size_t num_votes = host_ppf_vote_counts->back() + host_ppf_vote_indices->back();
-    fprintf(stderr, "num_nonunique_votes: %lu\n", num_votes);
+    BOOST_LOG_TRIVIAL(debug) << boost::format("num_nonunique_votes: %lu") % num_votes;
 
     delete ppf_vote_counts;
     delete host_ppf_vote_counts;
@@ -193,9 +194,7 @@ void Model::ComputeUniqueVotes(Scene *scene){
     this->votes = new thrust::device_vector<unsigned long>();
     this->voteCounts = new thrust::device_vector<unsigned int>();
     histogram_destructive(*nonunique_nonempty_votes, *(this->votes), *(this->voteCounts));
-    /* DEBUG */
-    fprintf(stderr, "num_unique_votes: %lu\n", this->votes->size());
-    /* DEBUG */
+    BOOST_LOG_TRIVIAL(debug) << boost::format("num_unique_votes: %lu") % this->votes->size();
     delete nonunique_nonempty_votes;
 
     thrust::sort_by_key(this->voteCounts->begin(),
@@ -204,19 +203,14 @@ void Model::ComputeUniqueVotes(Scene *scene){
                         thrust::greater<float>());
 
     thrust::host_vector<unsigned int> temp_votecounts(*this->voteCounts);
-    /* DEBUG */
-    fprintf(stderr, "1, 5, 10, 50: %u, %u, %u, %u\n",
-            temp_votecounts[1], temp_votecounts[5],
-            temp_votecounts[10], temp_votecounts[50]);
-    /* DEBUG */
+    BOOST_LOG_TRIVIAL(debug) << boost::format("1, 5, 10, 50: %u, %u, %u, %u") %
+        temp_votecounts[1] % temp_votecounts[5] % temp_votecounts[10] % temp_votecounts[50];
 
     float min_votecount = vote_count_threshold * temp_votecounts[0];
     std::size_t num_top_votes = thrust::count_if(
       voteCounts->begin(), voteCounts->end(),
       [min_votecount] __device__ (unsigned int x){ return x > min_votecount; });
-    /* DEBUG */
-    fprintf(stderr, "num_top_votes: %lu\n", num_top_votes);
-    /* DEBUG */
+    BOOST_LOG_TRIVIAL(debug) << boost::format("num_top_votes: %lu") % num_top_votes;
     this->votes->resize(num_top_votes);
     this->voteCounts->resize(num_top_votes);
 }
@@ -388,16 +382,15 @@ thrust::device_vector<float> Model::OptimizeWeights
 
         thrust::host_vector<float> weights(optimize_weights(this->cloud_ptr->size()));
         for(int j = 0; j < this->cloud_ptr->size(); j++){
-            fprintf(stderr, "weights[%d]: %f\n", j, weights[j]);
+            BOOST_LOG_TRIVIAL(debug) << boost::format("weights[%d]: %f") % j % weights[j];
             avg_weight_vec[j] = (avg_weight_vec[j]*(i) + weights[j])/(i+1);
-            fprintf(stderr, "avg_weights[%d]: %f\n", j, avg_weight_vec[j]);
+            BOOST_LOG_TRIVIAL(debug) << boost::format("avg_weights[%d]: %f") % j % avg_weight_vec[j];
         }
         delete new_scene_cloud;
         delete new_scene;
     }
     for(int k = 0; k < this->cloud_ptr->size(); k++){
-        fprintf(stderr, "avg_weights[%d]: %f\n", k, avg_weight_vec[k]);
-        fprintf(stdout, "avg_weights[%d]: %f\n", k, avg_weight_vec[k]);
+        BOOST_LOG_TRIVIAL(debug) << boost::format("avg_weights[%d]: %f") % k % avg_weight_vec[k];
     }
     return avg_weight_vec;
 }
@@ -415,9 +408,7 @@ void Model::ppf_lookup(Scene *scene){
     // launch voting kernel instance for each scene reference point
     ComputeUniqueVotes(scene);
     ComputeTransformations(scene);
-    /* DEBUG */
-    fprintf(stderr, "votes_size: %lu\n", this->votes->size());
-    /* DEBUG */
+    BOOST_LOG_TRIVIAL(debug) << boost::format("votes_size: %lu") % this->votes->size();
 
     // thrust::host_vector<float>host_weights(this->modelPointVoteWeights);
     // for(int i = 0; i < host_weights.size(); i++){
@@ -450,7 +441,7 @@ void Model::ppf_lookup(Scene *scene){
     HANDLE_ERROR(cudaEventSynchronize(stop));
     float elapsedTime;
     HANDLE_ERROR(cudaEventElapsedTime(&elapsedTime, start, stop));
-    fprintf(stderr, "Time to lookup model:  %3.1f ms\n", elapsedTime);
+    BOOST_LOG_TRIVIAL(info) << boost::format("Time to lookup model:  %3.1f ms") % elapsedTime;
 #endif
 }
 

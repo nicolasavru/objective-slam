@@ -1,8 +1,10 @@
 #ifndef __PPF_UTILS_H
 #define __PPF_UTILS_H
 
+#include <boost/format.hpp>
+#include <boost/log/trivial.hpp>
+
 #include <cuda.h>
-#include <cuda_runtime.h>                // Stops underlining of __global__
 #include <thrust/device_vector.h>
 #include <thrust/functional.h>
 #include <thrust/inner_product.h>
@@ -35,9 +37,7 @@ void histogram(const Vector1& input,
     histogram_values.resize(num_bins);
     histogram_counts.resize(num_bins);
 
-    #ifdef DEBUG
-        fprintf(stderr, "num_bins: %d\n", num_bins);
-    #endif
+    BOOST_LOG_TRIVIAL(debug) << boost::format("num_bins: %d") % num_bins;
 
     thrust::reduce_by_key(data.begin(), data.end(),
                           thrust::constant_iterator<IndexType>(1),

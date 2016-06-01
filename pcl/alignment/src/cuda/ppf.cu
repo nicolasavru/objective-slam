@@ -2,8 +2,9 @@
 #include <ctime>
 #include <stdio.h>
 #include <stdlib.h>
+#include <boost/format.hpp>
+#include <boost/log/trivial.hpp>
 #include <cuda.h>
-#include <cuda_runtime.h>                // Stops underlining of __global__
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <thrust/device_vector.h>
@@ -12,8 +13,6 @@
 #include "kernel.h"
 #include "book.h"
 #include "model.h"
-
-using namespace std;
 
 #include <thrust/sort.h>
 #include <thrust/device_ptr.h>
@@ -46,10 +45,7 @@ void test_histogram(char *point_path, int N){
                                                   (unsigned int) 1,
                                                   thrust::plus<unsigned int>(),
                                                   thrust::not_equal_to<unsigned int>());
-
-    /* DEBUG */
-    fprintf(stderr, "num_bins: %d\n", num_bins);
-    /* DEBUG */
+    BOOST_LOG_TRIVIAL(debug) << boost::format("num_bins: %d") % num_bins;
 
     thrust::device_vector<unsigned int> *hashKeys = new thrust::device_vector<unsigned int>(num_bins);
     thrust::device_vector<unsigned int> *ppfCount = new thrust::device_vector<unsigned int>(num_bins);
@@ -63,24 +59,28 @@ void test_histogram(char *point_path, int N){
     thrust::host_vector<unsigned int> *A = new thrust::host_vector<unsigned int>(*ppfCount);
 
     for (int i = 0; i < num_bins; i++){
-        fprintf(stderr, "%u: %u %u\n", i, (*A)[i]);
+        BOOST_LOG_TRIVIAL(debug) << boost::format("%u: %u") % i % (*A)[i];
     }
 }
 
 void ptr_test_cu(pcl::PointCloud<pcl::PointNormal> *scene_cloud_ptr){
-    fprintf(stderr, "foo-1: %p, %lu, %lu\n", scene_cloud_ptr, scene_cloud_ptr->points.size(), scene_cloud_ptr->size());
+    BOOST_LOG_TRIVIAL(debug) << boost::format("foo-1: %p, %lu, %lu") %
+        scene_cloud_ptr % scene_cloud_ptr->points.size() % scene_cloud_ptr->size();
 }
 
 void ptr_test_cu2(pcl::PointCloud<pcl::PointNormal> scene_cloud){
-    fprintf(stderr, "foo-2: %lu, %lu\n", scene_cloud.points.size(), scene_cloud.size());
+    BOOST_LOG_TRIVIAL(debug) << boost::format("foo-2: %lu, %lu") %
+        scene_cloud.points.size() % scene_cloud.size();
 }
 
 void ptr_test_cu3(pcl::PointCloud<pcl::PointNormal> &scene_cloud){
-    fprintf(stderr, "foo-3: %lu, %lu\n", scene_cloud.points.size(), scene_cloud.size());
+    BOOST_LOG_TRIVIAL(debug) << boost::format("foo-3: %lu, %lu") %
+        scene_cloud.points.size() % scene_cloud.size();
 }
 
 void ptr_test_cu4(const pcl::PointCloud<pcl::PointNormal> &scene_cloud){
-    fprintf(stderr, "foo-4: %lu, %lu\n", scene_cloud.points.size(), scene_cloud.size());
+    BOOST_LOG_TRIVIAL(debug) << boost::format("foo-4: %lu, %lu") %
+        scene_cloud.points.size() % scene_cloud.size();
 }
 
 
@@ -92,37 +92,30 @@ std::vector<std::vector<Eigen::Matrix4f>> ppf_registration(
     float vote_count_threshold, bool cpu_clustering, int devUse,
     float *model_weights){
     int *device_array = 0;
-    // HANDLE_ERROR(cudaMalloc((void**)&device_array, 1024*sizeof(int)));
 
     int numDevices;
     HANDLE_ERROR(cudaGetDeviceCount(&numDevices));
-    fprintf(stderr, "numDevices: %d\n", numDevices);
+    BOOST_LOG_TRIVIAL(info) << boost::format("Found %d CUDA devices:") % numDevices;
     cudaDeviceProp prop;
     for(int i = 0; i < numDevices; i++){
         cudaGetDeviceProperties(&prop, i);
-        fprintf(stderr, "%d) name: %s\n", i, prop.name);
+        BOOST_LOG_TRIVIAL(info) << boost::format("%d) name: %s") % i % prop.name;
     }
-    // HANDLE_ERROR(cudaSetDevice(devUse));
     HANDLE_ERROR(cudaSetDevice(std::min(numDevices-1, devUse)));
     int devNum;
     HANDLE_ERROR(cudaGetDevice(&devNum));
     HANDLE_ERROR(cudaGetDeviceProperties(&prop, devNum));
-    fprintf(stderr, "Using device %d, %s: \n", devNum, prop.name);
-    // thrust::device_vector<float3> foo(1024);
+    BOOST_LOG_TRIVIAL(info) << boost::format("Using device %d, %s") % devNum % prop.name;
 
     // cuda setup
     int blocks = prop.multiProcessorCount;
-    /* DEBUG */
-    fprintf(stderr, "blocks_multiproccount: %d\n", blocks);
-    /* DEBUG */
+    BOOST_LOG_TRIVIAL(debug) << boost::format("multiProcessorCount: %d") % blocks;
 
     std::vector<std::vector<Eigen::Matrix4f>> results;
 
     for(int i = 0; i < scene_clouds.size(); i++){
       pcl::PointCloud<pcl::PointNormal>::Ptr scene_cloud = scene_clouds[i];
         // build model description
-        // pcl::PointCloud<pcl::PointNormal> *scene_cloud_ptr = scene_clouds[0].get();
-        // pcl::PointCloud<pcl::PointNormal> *object_cloud_ptr = model_clouds[0].get();
 
         results.push_back(std::vector<Eigen::Matrix4f>());
 
@@ -150,14 +143,14 @@ std::vector<std::vector<Eigen::Matrix4f>> ppf_registration(
                 // TODO: copy only the first transformations instead of the entire vector.
                 thrust::host_vector<float> transformations =
                     thrust::host_vector<float>(model->getTransformations());
-                for(int j=0; j<4; j++){
-                    for(int k=0; k<4; k++){
-                        T(j,k) = transformations[j*4+k];
+                for(int r = 0; r < 4; r++){
+                    for(int c = 0; c < 4; c++){
+                        T(r,c) = transformations[r*4+c];
                     }
                 }
             }
 
-            cout << T << endl;
+            BOOST_LOG_TRIVIAL(info) << "Found transformation:\n" << T;
             results.back().push_back(T);
             delete model;
             delete scene;

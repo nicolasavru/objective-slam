@@ -772,7 +772,7 @@ __global__ void rot_clustering_kernel(float3 *translations,
 
     float rot_thresh_sq = ROT_THRESH*ROT_THRESH;
 
-    while(idx < count) {
+    while(idx < count){
         float3 thisTrans = translations[idx];
         float4 thisQuat  = quaternions[idx];
         float vote_count_out = 0;

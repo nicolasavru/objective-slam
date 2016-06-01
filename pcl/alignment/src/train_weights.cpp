@@ -1,4 +1,7 @@
 // #include <PSO_Optimizer.h>
+#include <boost/format.hpp>
+#include <boost/log/trivial.hpp>
+
 #include <DE_Optimizer.h>
 #include <SolutionSet.h>
 #include <FitnessSet.h>
@@ -17,9 +20,7 @@ void myFitness(const CudaOptimize::SolutionSet *solset, CudaOptimize::FitnessSet
   for(int i = 0; i < solset->getSolutionNumber(); i++){
       fitnesses[i] = MODEL_OBJ->ScorePose(solset->getDevicePositionsConst(0, i),
                                           TRUTH, *SCENE_OBJ->cloud_ptr); //0 is the number of set
-      /* DEBUG */
-      fprintf(stderr, "score[%d]: %f\n", i, fitnesses[i]);
-      /* DEBUG */
+      BOOST_LOG_TRIVIAL(info) << boost::format("score[%d]: %f") % i % fitnesses[i];
   }
 
   //write fitness values
@@ -27,9 +28,7 @@ void myFitness(const CudaOptimize::SolutionSet *solset, CudaOptimize::FitnessSet
 }
 
 std::vector<float> optimize_weights(int votes_size){
-    /* DEBUG */
-    fprintf(stderr, "num_points: %d\n", MODEL_OBJ->numPoints());
-    /* DEBUG */
+    BOOST_LOG_TRIVIAL(info) << boost::format("num_points: %d") % MODEL_OBJ->numPoints();
     // MODEL_OBJ->numPoints() must be <= 1024 (IOptimzer.cpp:83)
     CudaOptimize::DE_Optimizer p(&myFitness, MODEL_OBJ->numPoints(), 1, 1536);
     float2 bounds = {0.0, 8.0};

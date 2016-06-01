@@ -39,7 +39,8 @@
  *
  */
 
-
+#include <boost/format.hpp>
+#include <boost/log/trivial.hpp>
 // #include <pcl/features/ppf.h>
 #include <pcl/common/transforms.h>
 
@@ -60,16 +61,15 @@
 //////////////////////////////////////////////////////////////////////////////////////////////
 void clusterPoses(PoseWithVotesList &poses, PoseWithVotesList &result,
                   float trans_thresh, float rot_thresh){
-    fprintf(stderr, "Clustering poses ...\n");
+  BOOST_LOG_TRIVIAL(info) << "Clustering poses ...";
   // Start off by sorting the poses by the number of votes
   sort(poses.begin(), poses.end(), poseWithVotesCompareFunction);
   std::vector<PoseWithVotesList> clusters;
   std::vector<std::pair<size_t, unsigned int> > cluster_votes;
   for (size_t poses_i = 0; poses_i < poses.size(); ++ poses_i)
   {
-      /* DEBUG */
-      fprintf(stdout, "pose, nclusters: %lu, %lu\n", poses_i, clusters.size());
-      /* DEBUG */
+    BOOST_LOG_TRIVIAL(info) <<
+      boost::format("pose, nclusters: %lu, %lu") % poses_i % clusters.size();
     bool found_cluster = false;
     for (size_t clusters_i = 0; clusters_i < clusters.size(); ++ clusters_i)
     {
@@ -100,8 +100,10 @@ void clusterPoses(PoseWithVotesList &poses, PoseWithVotesList &result,
   result.clear ();
   size_t max_clusters = (clusters.size () < 3) ? clusters.size () : 3;
   for (size_t cluster_i = 0; cluster_i < max_clusters; ++ cluster_i){
-      fprintf(stderr, "Winning cluster has #votes: %d and #poses voted: %d.\n",
-           cluster_votes[cluster_i].second, clusters[cluster_votes[cluster_i].first].size ());
+    BOOST_LOG_TRIVIAL(info) <<
+      boost::format("Winning cluster has #votes: %d and #poses voted: %d.") %
+      cluster_votes[cluster_i].second %
+      clusters[cluster_votes[cluster_i].first].size();
     Eigen::Vector3f translation_average (0.0, 0.0, 0.0);
     Eigen::Vector4f rotation_average (0.0, 0.0, 0.0, 0.0);
     for (typename PoseWithVotesList::iterator v_it = clusters[cluster_votes[cluster_i].first].begin (); v_it != clusters[cluster_votes[cluster_i].first].end (); ++ v_it)

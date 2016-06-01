@@ -1,6 +1,7 @@
 #include <stdio.h>
+#include <boost/format.hpp>
+#include <boost/log/trivial.hpp>
 #include <cuda.h>
-#include <cuda_runtime.h>                // Stops underlining of __global__
 #include <pcl/point_types.h>
 #include <pcl/point_cloud.h>
 #include <thrust/sort.h>
@@ -19,9 +20,7 @@ Scene::Scene(){}
 // ref_point_downsample_factor defaults to 1 in scene.h
 Scene::Scene(pcl::PointCloud<pcl::PointNormal> *cloud_ptr, float d_dist,
              unsigned int ref_point_downsample_factor){
-    /* DEBUG */
-    fprintf(stderr, "foo0: %d\n", cloud_ptr->size());
-    /* DEBUG */
+    BOOST_LOG_TRIVIAL(debug) << boost::format("foo0: %d") % cloud_ptr->size();
     this->cloud_ptr = cloud_ptr;
     thrust::host_vector<float3> *points =
         new thrust::host_vector<float3>(cloud_ptr->size());
@@ -93,14 +92,13 @@ void Scene::initPPFs(thrust::host_vector<float3> *points, thrust::host_vector<fl
     this->modelPPFs = new thrust::device_vector<float4>(n*n);
 
 #ifdef DEBUG
-        fprintf(stderr, "n: %d\n", n);
-
-        // start cuda timer
-        cudaEvent_t start, stop;
-        HANDLE_ERROR(cudaEventCreate(&start));
-        HANDLE_ERROR(cudaEventCreate(&stop));
-        HANDLE_ERROR(cudaEventRecord(start, 0));
-    #endif
+    BOOST_LOG_TRIVIAL(debug) << boost::format("n: %d") % n;
+    // start cuda timer
+    cudaEvent_t start, stop;
+    HANDLE_ERROR(cudaEventCreate(&start));
+    HANDLE_ERROR(cudaEventCreate(&stop));
+    HANDLE_ERROR(cudaEventRecord(start, 0));
+#endif
 
     // This will crash if n = 0;
     int blocks = std::min(((int)(this->n + BLOCK_SIZE) - 1) / BLOCK_SIZE, MAX_NBLOCKS);
@@ -112,14 +110,15 @@ void Scene::initPPFs(thrust::host_vector<float3> *points, thrust::host_vector<fl
                                       RAW_PTR(this->modelPPFs),
                                       n, ref_point_downsample_factor, this->d_dist);
 
-    #ifdef DEBUG
-        // end cuda timer
-        HANDLE_ERROR(cudaEventRecord(stop, 0));
-        HANDLE_ERROR(cudaEventSynchronize(stop));
-        float elapsedTime;
-        HANDLE_ERROR(cudaEventElapsedTime(&elapsedTime, start, stop));
-        fprintf(stderr, "Time to generate PPFs: %3.1f ms\n", elapsedTime);
-    #endif
+#ifdef DEBUG
+    // end cuda timer
+    HANDLE_ERROR(cudaEventRecord(stop, 0));
+    HANDLE_ERROR(cudaEventSynchronize(stop));
+    float elapsedTime;
+    HANDLE_ERROR(cudaEventElapsedTime(&elapsedTime, start, stop));
+    BOOST_LOG_TRIVIAL(info) <<
+        boost::format("Time to generate PPFs: %3.1f ms") % elapsedTime;
+#endif
 }
 
 int Scene::numPoints(){

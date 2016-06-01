@@ -4,8 +4,16 @@
 #include <iostream>
 #include <fstream>
 
-#include <boost/program_options.hpp>
 #include <boost/format.hpp>
+#include <boost/log/core.hpp>
+#include <boost/log/trivial.hpp>
+// #include <boost/log/expressions.hpp>
+// #include <boost/log/sinks/text_file_backend.hpp>
+#include <boost/log/utility/setup/file.hpp>
+#include <boost/log/utility/setup/common_attributes.hpp>
+// #include <boost/log/sources/severity_logger.hpp>
+// #include <boost/log/sources/record_ostream.hpp>
+#include <boost/program_options.hpp>
 #include <Eigen/Core>
 #include <cuda.h>
 #include <cuda_runtime.h>                // Stops underlining of __global__
@@ -51,8 +59,8 @@ typedef pcl::PPFEstimation<pcl::PointNormal, pcl::PointNormal, FeatureT> Feature
 typedef pcl::PointCloud<FeatureT> FeatureCloudT;
 
 void ptr_test(pcl::PointCloud<pcl::PointNormal> *scene_cloud_ptr){
-    /* DEBUG */
-    fprintf(stderr, "foo-1: %p, %lu, %lu\n", scene_cloud_ptr, scene_cloud_ptr->points.size(), scene_cloud_ptr->size());
+    BOOST_LOG_TRIVIAL(debug) << boost::format("foo-1: %p, %lu, %lu") %
+        scene_cloud_ptr % scene_cloud_ptr->points.size() % scene_cloud_ptr->size();
 }
 
 std::vector<uchar3> colors = {
@@ -145,6 +153,9 @@ po::variables_map configure_options(int argc, char **argv){
         ("help", "produce help message")
         // runstate parameters
         ("dev", po::value<int>()->default_value(1), "CUDA device to use")
+        ("logfile", po::value<std::string>(), "log file")
+        ("loglevel", po::value<boost::log::trivial::severity_level>()->
+         default_value(boost::log::trivial::info), "log level")
 
         // algorithm parameters
         ("tau_d", po::value<CommaSeparatedVector>()->multitoken()->required(), "voxel grid factors")
@@ -154,6 +165,10 @@ po::variables_map configure_options(int argc, char **argv){
         ("vote_count_threshold", po::value<float>()->default_value(0.4),
          "percentile of vote counts which are discarded")
         ("cpu_clustering", po::value<bool>()->default_value(false), "whether to cluster on the cpu")
+        ("validation_translation_threshold", po::value<float>()->default_value(0.1),
+         "validation_translation_threshold")
+        ("validation_rotation_threshold", po::value<float>()->default_value(12),
+         "validation_rotation_threshold")
 
         // input files
         ("scene_files", po::value<CommaSeparatedVector>()->multitoken()->required(),
@@ -185,10 +200,28 @@ po::variables_map configure_options(int argc, char **argv){
     return vm;
 }
 
+void init_logging(po::variables_map vm){
+    pcl::console::setVerbosityLevel(pcl::console::L_ERROR);
+
+    if(vm.count("logfile")){
+        boost::log::add_file_log(
+            boost::log::keywords::file_name = vm["logfile"].as<std::string>(),
+            boost::log::keywords::format = "[%TimeStamp%]: %Message%",
+            boost::log::keywords::auto_flush = true);
+        boost::log::add_common_attributes();
+
+        boost::log::trivial::severity_level loglevel =
+            vm["loglevel"].as<boost::log::trivial::severity_level>();
+        boost::log::core::get()->set_filter(
+            boost::log::trivial::severity >= loglevel);
+    }
+};
+
 // Align a rigid object to a scene with clutter and occlusions
 int main(int argc, char **argv){
     srand(time(0));
     po::variables_map vm = configure_options(argc, argv);
+    init_logging(vm);
 
     // Load model and scene
     // MATLAB drost.m:5-39
@@ -199,10 +232,10 @@ int main(int argc, char **argv){
     for(std::string scene_file: scene_files.values){
         scene_clouds.push_back(pcl::PointCloud<pcl::PointNormal>::Ptr(
                                    new pcl::PointCloud<pcl::PointNormal>));
-        pcl::console::print_highlight(
-            "Loading scene point cloud: %s\n", scene_file.c_str());
+        BOOST_LOG_TRIVIAL(info) <<
+            boost::format("Loading scene point cloud: %s") % scene_file.c_str();
         if(pcl::io::loadPLYFile<pcl::PointNormal>(scene_file, *scene_clouds.back()) < 0){
-            pcl::console::print_error("Error loading scene file!\n");
+            BOOST_LOG_TRIVIAL(error) << "Error loading scene file!";
             exit(1);
         }
 
@@ -220,7 +253,7 @@ int main(int argc, char **argv){
     CommaSeparatedVector model_files = vm["model_files"].as<CommaSeparatedVector>();
 
     if(tau_d.size() != model_files.values.size()){
-        pcl::console::print_error("Each model must have an associated tau_d.\n");
+        BOOST_LOG_TRIVIAL(error) << "Each model must have an associated tau_d.";
         exit(1);
     }
     for(int i = 0; i < model_files.values.size(); i++){
@@ -228,10 +261,10 @@ int main(int argc, char **argv){
         model_clouds.push_back(pcl::PointCloud<pcl::PointNormal>::Ptr(
                                    new pcl::PointCloud<pcl::PointNormal>));
 
-        pcl::console::print_highlight(
-            "Loading model point cloud: %s\n", model_file.c_str());
+        BOOST_LOG_TRIVIAL(info) <<
+            boost::format("Loading model point cloud: %s") % model_file.c_str();
         if(pcl::io::loadPLYFile<pcl::PointNormal>(model_file, *model_clouds.back()) < 0){
-            pcl::console::print_error("Error loading model file!\n");
+            BOOST_LOG_TRIVIAL(error) << "Error loading model file!";
             exit(1);
         }
 
@@ -243,8 +276,9 @@ int main(int argc, char **argv){
                              maxPt.y - minPt.y,
                              maxPt.z - minPt.z};
         model_d_dists.push_back(tau_d[i]*max(model_diam));
-        fprintf(stderr, "model_diam, d_dist: (%f, %f, %f), %f\n",
-                model_diam.x, model_diam.y, model_diam.z, model_d_dists.back());
+        BOOST_LOG_TRIVIAL(debug) <<
+            boost::format("model_diam, d_dist: (%f, %f, %f), %f") %
+            model_diam.x % model_diam.y % model_diam.z % model_d_dists.back();
     }
 
     std::vector<pcl::PointCloud<pcl::PointNormal>::Ptr> training_clouds;
@@ -253,10 +287,10 @@ int main(int argc, char **argv){
         for(std::string training_file: training_files.values){
             training_clouds.push_back(pcl::PointCloud<pcl::PointNormal>::Ptr(
                                           new pcl::PointCloud<pcl::PointNormal>));
-            pcl::console::print_highlight(
-                "Loading training point cloud: %s\n", training_file.c_str());
+            BOOST_LOG_TRIVIAL(info) <<
+                boost::format("Loading training point cloud: %s") % training_file.c_str();
             if(pcl::io::loadPLYFile<pcl::PointNormal>(training_file, *training_clouds.back()) < 0){
-                pcl::console::print_error("Error loading scene file!\n");
+                BOOST_LOG_TRIVIAL(error) << "Error loading scene file!";
                 exit(1);
             }
         }
@@ -265,7 +299,7 @@ int main(int argc, char **argv){
     float d_dist3 = 15;
 
     // Downsample
-    pcl::console::print_info("Downsampling...\n");
+    BOOST_LOG_TRIVIAL(info) << "Downsampling...";
     int model_n = 50;
     int scene_n = 50;
     // int model_n = 1000;
@@ -276,41 +310,46 @@ int main(int argc, char **argv){
     // so, in teach loop, the original cloud gets de-allocated when new_* goes out of scope.
     // http://www.boost.org/doc/libs/1_60_0/libs/smart_ptr/shared_ptr.htm#assignment
     for(pcl::PointCloud<pcl::PointNormal>::Ptr& scene: scene_clouds){
-        pcl::console::print_info("Scene size before filtering: %u (%u x %u)\n",
-                                 scene->size(), scene->width, scene->height);
+        BOOST_LOG_TRIVIAL(info) <<
+            boost::format("Scene size before filtering: %u (%u x %u)") %
+            scene->size() % scene->width % scene->height;
         // scene = sequentialDownsample<pcl::PointNormal>(scene, scene_n);
         // scene = randomDownsample<pcl::PointNormal>(scene, 2500.0/scene->size());
         pcl::PointCloud<pcl::PointNormal>::Ptr new_scene =
             voxelGridDownsample<pcl::PointNormal>(scene, scene_leaf_size);
         scene = new_scene;
-        pcl::console::print_info("Scene size after filtering: %u (%u x %u)\n",
-                                 scene->size(), scene-> width, scene->height);
+        BOOST_LOG_TRIVIAL(info) <<
+            boost::format("Scene size after filtering: %u (%u x %u)") %
+            scene->size() % scene-> width % scene->height;
     }
 
     for(int i = 0; i < model_clouds.size(); i++){
         pcl::PointCloud<pcl::PointNormal>::Ptr model = model_clouds[i];
-        pcl::console::print_info("Model size before filtering: %u (%u x %u)\n",
-                                 model->size(), model->width, model->height);
+        BOOST_LOG_TRIVIAL(info) <<
+            boost::format("Model size before filtering: %u (%u x %u)") %
+            model->size() % model->width % model->height;
         // model = sequentialDownsample<pcl::PointNormal>(model, model_n);
         // model = randomDownsample<pcl::PointNormal>(model, 2500.0/model->size());
         pcl::PointCloud<pcl::PointNormal>::Ptr new_model =
             voxelGridDownsample<pcl::PointNormal>(model, model_d_dists[i]);
-        pcl::console::print_info("Model size after filtering: %u (%u x %u)\n",
-                                 new_model->size(), new_model-> width, new_model->height);
+        BOOST_LOG_TRIVIAL(info) <<
+            boost::format("Model size after filtering: %u (%u x %u)") %
+            new_model->size() % new_model-> width % new_model->height;
         model_clouds[i] = new_model;
     }
 
     for(pcl::PointCloud<pcl::PointNormal>::Ptr& training_cloud: training_clouds){
-        pcl::console::print_info(
-            "Training cloud size before filtering: %u (%u x %u)\n",
-            training_cloud->size(), training_cloud->width, training_cloud->height);
+        BOOST_LOG_TRIVIAL(info) <<
+            boost::format("Training cloud size before filtering: %u (%u x %u)") %
+            training_cloud->size() % training_cloud->width % training_cloud->height;
         // training_cloud = sequentialDownsample<pcl::PointNormal>(training_cloud, training_cloud_n);
         // training_cloud = randomDownsample<pcl::PointNormal>(training_cloud, 2500.0/training_cloud->size());
         pcl::PointCloud<pcl::PointNormal>::Ptr new_training_cloud =
             voxelGridDownsample<pcl::PointNormal>(training_cloud, d_dist3);
         training_cloud = new_training_cloud;
-        pcl::console::print_info("Training cloud size after filtering: %u (%u x %u)\n",
-                                 training_cloud->size(), training_cloud-> width, training_cloud->height);
+        BOOST_LOG_TRIVIAL(info) <<
+            boost::format("Training cloud size after filtering: %u (%u x %u)") %
+            training_cloud->size() % training_cloud-> width % training_cloud->height;
     }
 
     // // Estimate normals for object
@@ -382,17 +421,31 @@ int main(int argc, char **argv){
                 validation_file_stream.open(validation_files.values[i*model_clouds.size() + j]);
                 Eigen::Matrix4f truth;
                 validation_file_stream >> truth;
+                BOOST_LOG_TRIVIAL(info) <<
+                    boost::format("Transformations for %s in %s:") %
+                    model_files.values[j] % scene_files.values[i];
                 validation_file_stream.close();
-                cout << truth << std::endl;
+                BOOST_LOG_TRIVIAL(info) << "Estimated transformation:";
+                BOOST_LOG_TRIVIAL(info) << results[i][j];
+                BOOST_LOG_TRIVIAL(info) << "Ground truth:";
+                BOOST_LOG_TRIVIAL(info) << truth;
 
                 float model_diam = model_d_dists[j] / tau_d[j];
                 float2 dist = ht_dist(results[i][j], truth);
-                bool match = dist.x < 0.1*model_diam && dist.y < pcl::deg2rad(12.0f);
-                /* DEBUG */
-                fprintf(stderr, "trans, rot, match: %f, %f, %d, %d, %f, %f\n", dist.x, dist.y,
-                        dist.x < 0.2*model_diam, dist.y < pcl::deg2rad(24.0f), 0.1*model_diam, pcl::deg2rad(12.0f));
-                /* DEBUG */
+                float trans_thresh = vm["validation_translation_threshold"].as<float>()*model_diam;
+                float rot_thresh = pcl::deg2rad(vm["validation_rotation_threshold"].as<float>());
+                bool trans_match = dist.x < trans_thresh;
+                bool rot_match = dist.y < rot_thresh;
+                bool match = trans_match && rot_match;
 
+                BOOST_LOG_TRIVIAL(info) <<
+                    boost::format("Distance (trans, rot): %f, %f") % dist.x % dist.y;
+                BOOST_LOG_TRIVIAL(info) <<
+                    boost::format("Threshold (validation_rotation_threshold*model_diam , 12 deg): %f, %f") %
+                    trans_thresh % rot_thresh;
+                BOOST_LOG_TRIVIAL(info) <<
+                    boost::format("Match (trans, rot): %d, %d") % trans_match % rot_match;
+                cout << boost::format("%d") % match << std::endl;
             }
         }
     }

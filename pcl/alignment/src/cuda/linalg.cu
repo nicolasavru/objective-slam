@@ -13,9 +13,6 @@ __host__ float2 ht_dist(Eigen::Matrix4f a, Eigen::Matrix4f b){
   a_rot.fromRotationMatrix(a.block<3,3>(0,0));
   b_rot.fromRotationMatrix(b.block<3,3>(0,0));
   Eigen::AngleAxisf rotation_diff_mat(a_rot.inverse() * b_rot);
-  // /* DEBUG */
-  // fprintf(stderr, "trans, rot: %f, %f\n", norm(trans_diff), fabsf(rotation_diff_mat.angle()));
-  // /* DEBUG */
   float2 result = {norm(trans_diff), fabsf(rotation_diff_mat.angle())};
   return result;
 };

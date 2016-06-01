@@ -9,17 +9,17 @@ void write_array(const char *filename, T *data, int n){
     FILE *fp;
 
     if(!(fp = fopen(filename,"wb"))){
-        fprintf(stderr, "Error opening file file %s.\n", filename);
+        BOOST_LOG_TRIVIAL(error) << boost::format("Error opening file file %s.") % filename;
         exit(1);
     }
 
     if(fwrite(data, sizeof(T), n, fp) != n){
-        fprintf(stderr, "Error writing to file %s.\n", filename);
+        BOOST_LOG_TRIVIAL(error) << boost::format("Error writing to file %s.") % filename;
         exit(2);
     }
 
     if(fclose(fp)){
-        fprintf(stderr, "Error closing file %s.\n", filename);
+        BOOST_LOG_TRIVIAL(info) << boost::format("Error closing file %s.") % filename;
         exit(3);
     }
 }
@@ -29,7 +29,7 @@ void write_device_array(const char *filename, T *data, int n){
     T *host_array = new T[n];
     if(cudaMemcpy(host_array, data, n*sizeof(T), cudaMemcpyDeviceToHost)
        != cudaSuccess){
-        fprintf(stderr, "Error copying data from device to host.");
+        BOOST_LOG_TRIVIAL(error) << "Error copying data from device to host.";
         exit(4);
     }
     write_array(filename, host_array, n);
