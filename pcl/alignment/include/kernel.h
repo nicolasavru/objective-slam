@@ -42,6 +42,7 @@ __host__ __device__ float3 discretize(float3 f, float d_dist);
 __host__ __device__ float4 compute_ppf(float3 p1, float3 n1, float3 p2, float3 n2);
 __host__ __device__ float3 trans(float T[4][4]);
 __host__ __device__ float4 hrotmat2quat(float T[4][4]);
+__host__ __device__ void quat2hrotmat(float4 q, float T[4][4]);
 __host__ __device__ void trans(float3 v, float T[4][4]);
 __host__ __device__ void rotx(float theta, float T[4][4]);
 __host__ __device__ void roty(float theta, float T[4][4]);
@@ -118,7 +119,8 @@ __global__ void rot_clustering_kernel(float3 *translations,
                                       // float3 *translations_out,
                                       // float4 *quaternions_out,
                                       float *vote_counts_out,
-                                      int count, float trans_thresh);
+                                      int count, float trans_thresh,
+                                      bool use_l1_norm, bool use_averaged_clusters);
 
 __global__ void trans2idx_kernel(float3 *translations,
                                  unsigned int *trans_hash,

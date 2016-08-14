@@ -8,6 +8,7 @@
 #include <pcl/point_types.h>
 #include <pcl/point_cloud.h>
 #include <thrust/device_ptr.h>
+#include <thrust/extrema.h>
 #include <thrust/sort.h>
 #include <thrust/inner_product.h>
 #include <thrust/iterator/constant_iterator.h>
@@ -60,7 +61,8 @@ struct float16 {
 };
 
 Model::Model(pcl::PointCloud<pcl::PointNormal> *cloud, float d_dist,
-             float vote_count_threshold, bool cpu_clustering){
+             float vote_count_threshold, bool cpu_clustering,
+             bool use_l1_norm, bool use_averaged_clusters){
     this->cloud_ptr = cloud;
     thrust::host_vector<float3> *points =
         new thrust::host_vector<float3>(cloud_ptr->size());
@@ -79,6 +81,8 @@ Model::Model(pcl::PointCloud<pcl::PointNormal> *cloud, float d_dist,
     this->d_dist = d_dist;
     this->vote_count_threshold = vote_count_threshold;
     this->cpu_clustering = cpu_clustering;
+    this->use_l1_norm = use_l1_norm;
+    this->use_averaged_clusters = use_averaged_clusters;
     this->initPPFs(points, normals, cloud_ptr->size(), d_dist);
     this->modelPointVoteWeights = thrust::device_vector<float>(n, 1.0);
 
@@ -245,22 +249,22 @@ void Model::ComputeTransformations(Scene *scene){
 }
 
 thrust::device_vector<float> *Model::ClusterTransformations(){
-    thrust::device_vector<float3> transformation_trans =
-        thrust::device_vector<float3>(this->votes->size());
-    thrust::device_vector<float4> transformation_rots =
-        thrust::device_vector<float4>(this->votes->size());
+    this->transformation_trans =
+        new thrust::device_vector<float3>(this->votes->size());
+    this->transformation_rots =
+        new thrust::device_vector<float4>(this->votes->size());
     int blocks = std::min(((int)(this->votes->size()) + BLOCK_SIZE - 1) / BLOCK_SIZE, MAX_NBLOCKS);
     mat2transquat_kernel<<<blocks,BLOCK_SIZE>>>
         (thrust::raw_pointer_cast(this->transformations.data()),
-         thrust::raw_pointer_cast(transformation_trans.data()),
-         thrust::raw_pointer_cast(transformation_rots.data()),
+         thrust::raw_pointer_cast(transformation_trans->data()),
+         thrust::raw_pointer_cast(transformation_rots->data()),
          this->votes->size());
     thrust::device_vector<unsigned int> nonunique_trans_hash =
         thrust::device_vector<unsigned int>(this->votes->size());
     thrust::device_vector<unsigned int> adjacent_trans_hash =
         thrust::device_vector<unsigned int>(27*this->votes->size());
     trans2idx_kernel<<<blocks,BLOCK_SIZE>>>
-    (thrust::raw_pointer_cast(transformation_trans.data()),
+    (thrust::raw_pointer_cast(transformation_trans->data()),
      thrust::raw_pointer_cast(nonunique_trans_hash.data()),
      thrust::raw_pointer_cast(adjacent_trans_hash.data()),
      this->votes->size(), this->d_dist);
@@ -273,8 +277,8 @@ thrust::device_vector<float> *Model::ClusterTransformations(){
         new thrust::device_vector<float>(this->weightedVoteCounts.size());
     blocks = std::min(((int)(this->votes->size()) + BLOCK_SIZE - 1) / BLOCK_SIZE, MAX_NBLOCKS);
     rot_clustering_kernel<<<blocks,BLOCK_SIZE>>>
-        (thrust::raw_pointer_cast(transformation_trans.data()),
-         thrust::raw_pointer_cast(transformation_rots.data()),
+        (thrust::raw_pointer_cast(transformation_trans->data()),
+         thrust::raw_pointer_cast(transformation_rots->data()),
          thrust::raw_pointer_cast(this->weightedVoteCounts.data()),
          thrust::raw_pointer_cast(adjacent_trans_hash.data()),
          RAW_PTR(transIndices), RAW_PTR(trans_search_array.GetHashkeys()),
@@ -282,7 +286,8 @@ thrust::device_vector<float> *Model::ClusterTransformations(){
          RAW_PTR(trans_search_array.GetFirstHashkeyIndices()),
          RAW_PTR(trans_search_array.GetHashkeyToDataMap()),
          thrust::raw_pointer_cast(vote_counts_out->data()),
-         this->votes->size(), this->d_dist);
+         this->votes->size(), this->d_dist,
+         this->use_l1_norm, this->use_averaged_clusters);
     delete transIndices;
     return vote_counts_out;
 }
@@ -427,12 +432,9 @@ void Model::ppf_lookup(Scene *scene){
     }
     else{
         this->vote_counts_out = ClusterTransformations();
-        thrust::sort_by_key(
-            this->vote_counts_out->begin(),
-            this->vote_counts_out->end(),
-            thrust::device_ptr<struct float16>(
-                (struct float16 *)thrust::raw_pointer_cast(this->transformations.data())),
-            thrust::greater<unsigned int>());
+        this->max_idx =
+            thrust::max_element(this->vote_counts_out->begin(),
+                                this->vote_counts_out->end()) - this->vote_counts_out->begin();
     }
 
 #ifdef DEBUG

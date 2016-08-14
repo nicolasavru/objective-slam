@@ -141,6 +141,30 @@ __host__ __device__ float4 hrotmat2quat(float T[4][4]){
     return q;
 }
 
+__host__ __device__ void quat2hrotmat(float4 q, float T[4][4]){
+    // https://en.wikipedia.org/wiki/Rotation_matrix#Quaternion
+    float n = q.x*q.x + q.y*q.y + q.z*q.z + q.w*q.w;
+    float s = n == 0 ? 0 : 2 / n;
+    float wx = s * q.x * q.y;
+    float wy = s * q.x * q.z;
+    float wz = s * q.x * q.w;
+    float xx = s * q.y * q.y;
+    float xy = s * q.y * q.z;
+    float xz = s * q.y * q.w;
+    float yy = s * q.z * q.z;
+    float yz = s * q.z * q.w;
+    float zz = s * q.w * q.w;
+    T[0][0] = 1 - (yy + zz);
+    T[0][1] = xy - wz;
+    T[0][2] = xz + wy;
+    T[1][0] = xy + wz;
+    T[1][1] = 1 - (xx + zz);
+    T[1][2] = yz - wx;
+    T[2][0] = xz - wy;
+    T[2][1] = yz + wx;
+    T[2][2] = 1 - (xx + yy);
+}
+
 __host__ __device__ void trans(float3 v, float T[4][4]){
     zeroMat4(T);
     T[0][0] = 1;
@@ -764,7 +788,8 @@ __global__ void rot_clustering_kernel(float3 *translations,
                                       unsigned int *transKeys,  std::size_t *transCount,
                                       std::size_t *firstTransIndex, std::size_t *key2transMap,
                                       float *vote_counts_out,
-                                      int count, float trans_thresh){
+                                      int count, float trans_thresh,
+                                      bool use_l1_norm, bool use_averaged_clusters){
     if(count <= 1) return;
 
     int ind = threadIdx.x;
@@ -775,7 +800,8 @@ __global__ void rot_clustering_kernel(float3 *translations,
     while(idx < count){
         float3 thisTrans = translations[idx];
         float4 thisQuat  = quaternions[idx];
-        float vote_count_out = 0;
+        float vote_count_out = 1;
+        float3 thisTrans_out = thisTrans;
         for(int adjacent_block = 0; adjacent_block < 27; adjacent_block++){
             unsigned int thisAdjacentHash = adjacent_trans_hash[27*idx+adjacent_block];
             unsigned int thisAdjacentHashIndex = transIndices[27*idx+adjacent_block];
@@ -788,18 +814,29 @@ __global__ void rot_clustering_kernel(float3 *translations,
 
             for(int j = 0; j < thisTransCount; j++){
                 unsigned int thisTransIndex = key2transMap[thisFirstTransIndex+j];
+                float thisVoteCount = vote_counts[thisTransIndex];
                 float quatDiff =
-                        fabsf(8*(1-dot(thisQuat, quaternions[thisTransIndex])));
+                    fabsf(8*(1-dot(thisQuat, quaternions[thisTransIndex])));
                 if(quatDiff < rot_thresh_sq){
-                    float normDiffTrans =
-                        norm(thisTrans - translations[thisTransIndex]);
-                    if(normDiffTrans < trans_thresh){
-                        vote_count_out += vote_counts[thisTransIndex];
+                    if(!use_l1_norm){
+                        float normDiffTrans =
+                            norm(thisTrans - translations[thisTransIndex]);
+                        if(!(normDiffTrans < trans_thresh)){
+                            continue;
+                        }
                     }
+                    if(use_averaged_clusters){
+                        thisTrans_out = vote_count_out * thisTrans_out;
+                        thisTrans_out =
+                            thisTrans_out + vote_counts[thisTransIndex]*translations[thisTransIndex];
+                        thisTrans_out = (1/(vote_count_out + thisVoteCount)) * thisTrans_out;
+                    }
+                    vote_count_out += thisVoteCount;
                 }
             }
         }
         vote_counts_out[idx] = vote_count_out;
+        translations[idx] = thisTrans_out;
 
         // grid stride
         idx += blockDim.x * gridDim.x;

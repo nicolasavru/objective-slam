@@ -89,8 +89,9 @@ std::vector<std::vector<Eigen::Matrix4f>> ppf_registration(
     std::vector<pcl::PointCloud<pcl::PointNormal>::Ptr> model_clouds,
     std::vector<pcl::PointCloud<pcl::PointNormal>::Ptr> empty_clouds,
     std::vector<float> model_d_dists, unsigned int ref_point_downsample_factor,
-    float vote_count_threshold, bool cpu_clustering, int devUse,
-    float *model_weights){
+    float vote_count_threshold, bool cpu_clustering,
+    bool use_l1_norm, bool use_averaged_clusters,
+    int devUse, float *model_weights){
     int *device_array = 0;
 
     int numDevices;
@@ -126,7 +127,7 @@ std::vector<std::vector<Eigen::Matrix4f>> ppf_registration(
             Scene *scene = new Scene(scene_cloud.get(), model_d_dists[j], ref_point_downsample_factor);
             pcl::PointCloud<pcl::PointNormal>::Ptr model_cloud = model_clouds[j];
             Model *model = new Model(model_cloud.get(), model_d_dists[j], vote_count_threshold,
-                                     cpu_clustering);
+                                     cpu_clustering, use_l1_norm, use_averaged_clusters);
 
             // thrust::host_vector<float> optimal_weights(model->OptimizeWeights(empty_clouds, 4));
             // model->modelPointVoteWeights = thrust::device_vector<float>(optimal_weights);
@@ -145,9 +146,15 @@ std::vector<std::vector<Eigen::Matrix4f>> ppf_registration(
                     thrust::host_vector<float>(model->getTransformations());
                 for(int r = 0; r < 4; r++){
                     for(int c = 0; c < 4; c++){
-                        T(r,c) = transformations[r*4+c];
+                        T(r,c) = transformations[model->max_idx*16 + r*4+c];
                     }
                 }
+                thrust::host_vector<float3> transformation_trans(*model->transformation_trans);
+                thrust::host_vector<float4> transformation_rots(*model->transformation_rots);
+                // quat2hrotmat(transformation_rots[model->max_idx], (float (*)[4]) transformations.data());
+                T(0, 3) = transformation_trans[model->max_idx].x;
+                T(1, 3) = transformation_trans[model->max_idx].y;
+                T(2, 3) = transformation_trans[model->max_idx].z;
             }
 
             BOOST_LOG_TRIVIAL(info) << "Found transformation:\n" << T;

@@ -165,6 +165,10 @@ po::variables_map configure_options(int argc, char **argv){
         ("vote_count_threshold", po::value<float>()->default_value(0.4),
          "percentile of vote counts which are discarded")
         ("cpu_clustering", po::value<bool>()->default_value(false), "whether to cluster on the cpu")
+        ("use_l1_norm", po::value<bool>()->default_value(false),
+         "whether to cluster using an l1 norm instead of an l2 norm")
+        ("use_averaged_clusters", po::value<bool>()->default_value(false),
+         "whether to compute cluster centers using a weighted average")
         ("validation_translation_threshold", po::value<float>()->default_value(0.1),
          "validation_translation_threshold")
         ("validation_rotation_threshold", po::value<float>()->default_value(12),
@@ -222,6 +226,13 @@ int main(int argc, char **argv){
     srand(time(0));
     po::variables_map vm = configure_options(argc, argv);
     init_logging(vm);
+
+    std::string argv_string;
+    for(int i = 0; i < argc; i++){
+        argv_string.append(argv[i]);
+        argv_string.append(std::string(" "));
+    }
+    BOOST_LOG_TRIVIAL(info) << argv_string;
 
     // Load model and scene
     // MATLAB drost.m:5-39
@@ -396,7 +407,10 @@ int main(int argc, char **argv){
         ppf_registration(scene_clouds, model_clouds, training_clouds,
                          model_d_dists, vm["ref_point_df"].as<unsigned int>(),
                          vm["vote_count_threshold"].as<float>(),
-                         vm["cpu_clustering"].as<bool>(), vm["dev"].as<int>(),
+                         vm["cpu_clustering"].as<bool>(),
+                         vm["use_l1_norm"].as<bool>(),
+                         vm["use_averaged_clusters"].as<bool>(),
+                         vm["dev"].as<int>(),
                          NULL);
 
     // pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr color_cloud(new pcl::PointCloud<pcl::PointXYZRGBNormal>);
@@ -441,7 +455,7 @@ int main(int argc, char **argv){
                 BOOST_LOG_TRIVIAL(info) <<
                     boost::format("Distance (trans, rot): %f, %f") % dist.x % dist.y;
                 BOOST_LOG_TRIVIAL(info) <<
-                    boost::format("Threshold (validation_rotation_threshold*model_diam , 12 deg): %f, %f") %
+                    boost::format("Threshold (validation_translation_threshold*model_diam , 12 deg): %f, %f") %
                     trans_thresh % rot_thresh;
                 BOOST_LOG_TRIVIAL(info) <<
                     boost::format("Match (trans, rot): %d, %d") % trans_match % rot_match;

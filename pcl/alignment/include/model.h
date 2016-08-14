@@ -18,7 +18,8 @@ class Model : public Scene {
 
   public:
     Model(pcl::PointCloud<pcl::PointNormal> *cloud, float d_dist,
-          float vote_count_threshold, bool cpu_clustering);
+          float vote_count_threshold, bool cpu_clustering,
+          bool use_l1_norm, bool use_averaged_clusters);
     ~Model();
 
     void SetModelPointVoteWeights(thrust::device_vector<float> modelPointVoteWeights);
@@ -45,6 +46,8 @@ class Model : public Scene {
 
         float vote_count_threshold;
         bool cpu_clustering;
+        bool use_l1_norm;
+        bool use_averaged_clusters;
 
         // ppfCount[i] is the number of PPFs whose hash is hashKeys[i];
         thrust::device_vector<unsigned int> *ppfCount;
@@ -112,6 +115,7 @@ class Model : public Scene {
         ParallelHashArray<unsigned int> search_array;
         thrust::device_vector<float> modelPointVoteWeights;
         thrust::device_vector<float> weightedVoteCounts;
+    unsigned int max_idx;
 
         void accumulateVotes();
 };
