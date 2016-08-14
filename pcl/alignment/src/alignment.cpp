@@ -179,8 +179,6 @@ po::variables_map configure_options(int argc, char **argv){
          "ply files to find models in")
         ("model_files", po::value<CommaSeparatedVector>()->multitoken()->required(),
          "ply files to find in scenes")
-        ("training_files", po::value<CommaSeparatedVector>()->multitoken(),
-         "ply files to generate training scenes with")
         ("validation_files", po::value<CommaSeparatedVector>()->multitoken(),
          "file with ground truth transformations for models in scenes")
 
@@ -292,23 +290,6 @@ int main(int argc, char **argv){
             model_diam.x % model_diam.y % model_diam.z % model_d_dists.back();
     }
 
-    std::vector<pcl::PointCloud<pcl::PointNormal>::Ptr> training_clouds;
-    if(vm.count("training_files")){
-        CommaSeparatedVector training_files = vm["training_files"].as<CommaSeparatedVector>();
-        for(std::string training_file: training_files.values){
-            training_clouds.push_back(pcl::PointCloud<pcl::PointNormal>::Ptr(
-                                          new pcl::PointCloud<pcl::PointNormal>));
-            BOOST_LOG_TRIVIAL(info) <<
-                boost::format("Loading training point cloud: %s") % training_file.c_str();
-            if(pcl::io::loadPLYFile<pcl::PointNormal>(training_file, *training_clouds.back()) < 0){
-                BOOST_LOG_TRIVIAL(error) << "Error loading scene file!";
-                exit(1);
-            }
-        }
-    }
-
-    float d_dist3 = 15;
-
     // Downsample
     BOOST_LOG_TRIVIAL(info) << "Downsampling...";
     int model_n = 50;
@@ -347,20 +328,6 @@ int main(int argc, char **argv){
             boost::format("Model size after filtering: %u (%u x %u)") %
             new_model->size() % new_model-> width % new_model->height;
         model_clouds[i] = new_model;
-    }
-
-    for(pcl::PointCloud<pcl::PointNormal>::Ptr& training_cloud: training_clouds){
-        BOOST_LOG_TRIVIAL(info) <<
-            boost::format("Training cloud size before filtering: %u (%u x %u)") %
-            training_cloud->size() % training_cloud->width % training_cloud->height;
-        // training_cloud = sequentialDownsample<pcl::PointNormal>(training_cloud, training_cloud_n);
-        // training_cloud = randomDownsample<pcl::PointNormal>(training_cloud, 2500.0/training_cloud->size());
-        pcl::PointCloud<pcl::PointNormal>::Ptr new_training_cloud =
-            voxelGridDownsample<pcl::PointNormal>(training_cloud, d_dist3);
-        training_cloud = new_training_cloud;
-        BOOST_LOG_TRIVIAL(info) <<
-            boost::format("Training cloud size after filtering: %u (%u x %u)") %
-            training_cloud->size() % training_cloud-> width % training_cloud->height;
     }
 
     // // Estimate normals for object
@@ -404,7 +371,7 @@ int main(int argc, char **argv){
     /* DEBUG */
     // float *model_weights = (float *)malloc(model->size()*sizeof(float));
     std::vector<std::vector<Eigen::Matrix4f>> results =
-        ppf_registration(scene_clouds, model_clouds, training_clouds,
+        ppf_registration(scene_clouds, model_clouds,
                          model_d_dists, vm["ref_point_df"].as<unsigned int>(),
                          vm["vote_count_threshold"].as<float>(),
                          vm["cpu_clustering"].as<bool>(),

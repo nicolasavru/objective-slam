@@ -20,7 +20,6 @@ void ptr_test_cu4(const pcl::PointCloud<pcl::PointNormal> &scene_cloud);
 std::vector<std::vector<Eigen::Matrix4f>> ppf_registration(
     std::vector<pcl::PointCloud<pcl::PointNormal>::Ptr> scene_clouds,
     std::vector<pcl::PointCloud<pcl::PointNormal>::Ptr> model_clouds,
-    std::vector<pcl::PointCloud<pcl::PointNormal>::Ptr> empty_clouds,
     std::vector<float> model_d_dists, unsigned int ref_point_downsample_factor,
     float vote_count_threshold, bool cpu_clustering,
     bool use_l1_norm, bool use_averaged_clusters,

@@ -38,28 +38,12 @@ find_library(CUDADEVRT
    NAMES cudadevrt
    PATHS "/opt/" "/usr/local/" 
    PATH_SUFFIXES "cuda/lib64"
-   DOC "Location of CudaOptimize library"
+   DOC "Location of cudadevrt library"
    NO_DEFAULT_PATH
 )
 
-# CudaOptimize library
-find_library(CUDA_OPTIMIZE_LIB
-   NAMES CudaOptimize
-   PATHS "C:/Program Files/CudaOptimize/" "/usr/" "/home/avru/Documents/Senior_Project/libcudaoptimize/libCudaOptimize-1.0.0-src/build"
-   # PATH_SUFFIXES "lib"
-   DOC "Location of CudaOptimize library"
-   NO_DEFAULT_PATH
-   )
-
-find_path(CUDAOPTIMIZE_INCLUDE_DIR
-   SolutionSet.h
-   PATHS "C:/Program Files/CudaOptimize/include" "/usr/include/libCudaOptimize/" "/home/avru/Documents/Senior_Project/libcudaoptimize/libCudaOptimize-1.0.0-src/"
-   DOC "Location of cudaOptimize headers"
-   NO_DEFAULT_PATH
-   )
-
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/src)
-include_directories(SYSTEM ${Boost_INCLUDE_DIRS} ${PCL_INCLUDE_DIRS} ${CUDA_INCLUDE_DIRS} ${CUDAOPTIMIZE_INCLUDE_DIR})
+include_directories(SYSTEM ${Boost_INCLUDE_DIRS} ${PCL_INCLUDE_DIRS} ${CUDA_INCLUDE_DIRS})
 
 link_directories(${PCL_LIBRARY_DIRS})
 add_definitions(${PCL_DEFINITIONS})
@@ -130,5 +114,5 @@ CUDA_ADD_LIBRARY(alignment_lib ${cuda} ${srcs})
 add_executable (alignment src/alignment.cpp)
 # set_property(TARGET alignment PROPERTY CXX_STANDARD 11)
 
-target_link_libraries (alignment alignment_lib ${Boost_LIBRARIES} ${PCL_LIBRARIES} ${CUDA_LIBRARIES} ${CUDADEVRT} ${CUDA_OPTIMIZE_LIB})
-# target_link_libraries (test test_lib ${PCL_LIBRARIES} ${CUDA_LIBRARIES} ${CUDADEVRT} ${CUDA_OPTIMIZE_LIB})
+target_link_libraries (alignment alignment_lib ${Boost_LIBRARIES} ${PCL_LIBRARIES} ${CUDA_LIBRARIES} ${CUDADEVRT})
+# target_link_libraries (test test_lib ${PCL_LIBRARIES} ${CUDA_LIBRARIES} ${CUDADEVRT})

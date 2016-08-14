@@ -19,7 +19,6 @@
 #include <thrust/binary_search.h>
 
 #include "model.h"
-#include "train_weights.h"
 #include "impl/ppf_utils.hpp"
 #include "impl/util.hpp"
 #include "impl/parallel_hash_array.hpp"
@@ -28,11 +27,6 @@
 #include "book.h"
 #include "transformation_clustering.h"
 #include "linalg.h"
-
-// This must be here, as opposed to in train_weights.cpp, due to linking issues.
-Model *MODEL_OBJ;
-Scene *SCENE_OBJ;
-Eigen::Matrix4f TRUTH;
 
 
 template <int value>
@@ -314,91 +308,6 @@ PoseWithVotesList Model::ClusterTransformationsCPU(){
     return clustered_transformations_list;
 }
 
-float Model::ScorePose(const float *weights, Eigen::Matrix4f truth,
-                       pcl::PointCloud<pcl::PointNormal> scene){
-    thrust::device_ptr<const float> weights_dev_ptr =
-        thrust::device_pointer_cast<const float>(weights);
-    thrust::device_vector<float> weight_vec =
-        thrust::device_vector<float>(weights_dev_ptr, weights_dev_ptr + this->numPoints());
-
-    this->weightedVoteCounts =
-    // thrust::device_vector<float> weighted_vote_counts =
-        ComputeWeightedVoteCounts(*(this->votes),
-                                  *(this->voteCounts),
-                                  weight_vec);
-
-    // TODO: don't re-cluster transformations each time
-    thrust::device_vector<float> *dev_vote_counts_out = ClusterTransformations();
-    thrust::host_vector<float> vote_counts_out(*dev_vote_counts_out);
-    int max_idx = std::distance(vote_counts_out.begin(),
-                                std::max_element(vote_counts_out.begin(),
-                                                 vote_counts_out.end()));
-    // // TODO: replace sort with find max
-    // thrust::sort_by_key(vote_counts_out->begin(),
-    //                     vote_counts_out->end(),
-    //                     thrust::device_ptr<struct float16>((struct float16 *) thrust::raw_pointer_cast(this->transformations.data())),
-    //                     thrust::greater<unsigned int>());
-    delete dev_vote_counts_out;
-
-    thrust::host_vector<float> transformations =
-        thrust::host_vector<float>(this->getTransformations());
-
-    Eigen::Matrix4f T;
-    for(int i=0; i<4; i++){
-        for(int j=0; j<4; j++){
-            T(i,j) = transformations[16*max_idx+i*4+j];
-        }
-    }
-
-    float2 dist = ht_dist(truth, T);
-    float score = dist.x/this->d_dist + dist.y/D_ANGLE0;
-    // float score = 1 + dist.y;
-    return score;
-}
-
-thrust::device_vector<float> Model::OptimizeWeights
-(std::vector<pcl::PointCloud<pcl::PointNormal>::Ptr> empty_cloud_vec,
- int num_iterations){
-    MODEL_OBJ = this;
-
-    float3 t;
-    float4 r;
-
-    thrust::host_vector<float> avg_weight_vec(this->cloud_ptr->size());
-
-    for(int i = 0; i < num_iterations; i++){
-        t = (float3){0, 0, 0};
-        r = (float4){0, 0, 0, 0};
-        pcl::PointCloud<pcl::PointNormal> *new_scene_cloud =
-            new pcl::PointCloud<pcl::PointNormal>();
-        for(int j = 0; j < empty_cloud_vec.size(); j++){
-            GenerateSceneWithModel(*empty_cloud_vec[j], *new_scene_cloud, t, r,
-                                   *new_scene_cloud);
-        }
-        TRUTH = GenerateSceneWithModel(*this->cloud_ptr, *new_scene_cloud, t, r,
-                                       *new_scene_cloud);
-
-
-        Scene *new_scene = new Scene(new_scene_cloud, this->d_dist);
-        SCENE_OBJ = new_scene;
-
-        ComputeUniqueVotes(new_scene);
-        ComputeTransformations(new_scene);
-
-        thrust::host_vector<float> weights(optimize_weights(this->cloud_ptr->size()));
-        for(int j = 0; j < this->cloud_ptr->size(); j++){
-            BOOST_LOG_TRIVIAL(debug) << boost::format("weights[%d]: %f") % j % weights[j];
-            avg_weight_vec[j] = (avg_weight_vec[j]*(i) + weights[j])/(i+1);
-            BOOST_LOG_TRIVIAL(debug) << boost::format("avg_weights[%d]: %f") % j % avg_weight_vec[j];
-        }
-        delete new_scene_cloud;
-        delete new_scene;
-    }
-    for(int k = 0; k < this->cloud_ptr->size(); k++){
-        BOOST_LOG_TRIVIAL(debug) << boost::format("avg_weights[%d]: %f") % k % avg_weight_vec[k];
-    }
-    return avg_weight_vec;
-}
 
 void Model::ppf_lookup(Scene *scene){
 

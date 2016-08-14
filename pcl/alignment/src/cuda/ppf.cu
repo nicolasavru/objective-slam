@@ -87,7 +87,6 @@ void ptr_test_cu4(const pcl::PointCloud<pcl::PointNormal> &scene_cloud){
 std::vector<std::vector<Eigen::Matrix4f>> ppf_registration(
     std::vector<pcl::PointCloud<pcl::PointNormal>::Ptr> scene_clouds,
     std::vector<pcl::PointCloud<pcl::PointNormal>::Ptr> model_clouds,
-    std::vector<pcl::PointCloud<pcl::PointNormal>::Ptr> empty_clouds,
     std::vector<float> model_d_dists, unsigned int ref_point_downsample_factor,
     float vote_count_threshold, bool cpu_clustering,
     bool use_l1_norm, bool use_averaged_clusters,
@@ -129,11 +128,6 @@ std::vector<std::vector<Eigen::Matrix4f>> ppf_registration(
             Model *model = new Model(model_cloud.get(), model_d_dists[j], vote_count_threshold,
                                      cpu_clustering, use_l1_norm, use_averaged_clusters);
 
-            // thrust::host_vector<float> optimal_weights(model->OptimizeWeights(empty_clouds, 4));
-            // model->modelPointVoteWeights = thrust::device_vector<float>(optimal_weights);
-            // for(int i = 0; i < object_cloud_ptr->size(); i++){
-            //     model_weights[i] = optimal_weights[i];
-            // }
             model->ppf_lookup(scene);
 
             Eigen::Matrix4f T;
