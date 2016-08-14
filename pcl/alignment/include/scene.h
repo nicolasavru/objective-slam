@@ -1,16 +1,11 @@
 #ifndef __SCENE_H
 #define __SCENE_H
 
-#include <cuda.h>
-#include <cuda_runtime.h>                // Stops underlining of __global__
-#include <pcl/point_types.h>
 #include <pcl/point_cloud.h>
+#include <pcl/point_types.h>
 #include <thrust/device_vector.h>
 #include <thrust/host_vector.h>
 
-#include "debug.h"
-
-#define RAW_PTR(V) thrust::raw_pointer_cast(V->data())
 
 class Scene {
 

@@ -1,9 +1,11 @@
-#include <cstdlib>
-#include <string.h>
-#include <cuda.h>
-#include <cuda_runtime.h>                // Stops underlining of __global__
-#include <stdio.h>
 #include "kernel.h"
+
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+
+#include <vector_types.h>
+
 #include "vector_ops.h"
 
 
@@ -312,8 +314,8 @@ __device__ void trans_model_scene(float3 m_r, float3 n_r_m, float3 m_i,
     n_tmp = homogenize(n_r_m);
     n_tmp = mat4f_vmul(rot_y, n_tmp);
     rotz(-1*atan2f(n_tmp.y, n_tmp.x), rot_z);
-    mat4f_mul(rot_z, rot_y, T_tmp);     //POTENTIALLY SLOW
-    mat4f_mul(T_tmp, transm, T_m_g);    //POTENTIALLY SLOW
+    mat4f_mul(rot_z, rot_y, T_tmp);
+    mat4f_mul(T_tmp, transm, T_m_g);
 
     s_r = -1*s_r;
     trans(s_r, transm);
@@ -321,8 +323,8 @@ __device__ void trans_model_scene(float3 m_r, float3 n_r_m, float3 m_i,
     n_tmp = homogenize(n_r_s);
     n_tmp = mat4f_vmul(rot_y, n_tmp);
     rotz(-1*atan2f(n_tmp.y, n_tmp.x), rot_z);
-    mat4f_mul(rot_z, rot_y, T_tmp);     //POTENTIALLY SLOW
-    mat4f_mul(T_tmp, transm, T_s_g);    //POTENTIALLY SLOW
+    mat4f_mul(rot_z, rot_y, T_tmp);
+    mat4f_mul(T_tmp, transm, T_s_g);
 
 
     n_tmp = homogenize(m_i);
@@ -341,10 +343,11 @@ __device__ void trans_model_scene(float3 m_r, float3 n_r_m, float3 m_i,
     rotx(alpha, rot_x);
 
     invht(T_s_g, T_tmp);
-    mat4f_mul(T_tmp, rot_x, T_tmp2);    //POTENTIALLY SLOW
-    mat4f_mul(T_tmp2, T_m_g, T);        //POTENTIALLY SLOW
+    mat4f_mul(T_tmp, rot_x, T_tmp2);
+    mat4f_mul(T_tmp2, T_m_g, T);
     // T is T_ms
 }
+
 
 __device__ void compute_rot_angles(float3 n_r_m, float3 n_r_s,
                                    float *m_roty, float *m_rotz,
@@ -364,6 +367,7 @@ __device__ void compute_rot_angles(float3 n_r_m, float3 n_r_s,
     n_tmp = mat4f_vmul(rot_y, n_tmp);
     *s_rotz = -1*atan2f(n_tmp.y, n_tmp.x);
 }
+
 
 __device__ void compute_transforms(unsigned int angle_idx, float3 m_r,
                                    float m_roty, float m_rotz,
@@ -395,6 +399,7 @@ __device__ void compute_transforms(unsigned int angle_idx, float3 m_r,
     mat4f_mul(T_tmp, rot_x, T_tmp2);
     mat4f_mul(T_tmp2, T_m_g, T_arr);
 }
+
 
 __global__ void ppf_kernel(float3 *points, float3 *norms, float4 *out, int count,
                            int ref_point_downsample_factor, float d_dist){
@@ -429,13 +434,11 @@ __global__ void ppf_kernel(float3 *points, float3 *norms, float4 *out, int count
                     continue;
                 };
 
-                // MATLAB model_description.m:31
                 // handle case of identical points in pair
                 if((j + i - idx) == 0){
                     out[idx*count + j + i].x = CUDART_NAN_F;
                     continue;
                 };
-                // MATLAB model_description.m:37
                 // Spoints and Snorms are currently unreliable due to a race condition.
                 // float4 ppf = compute_ppf(thisPoint, thisNorm, Spoints[j], Snorms[j]);
                 float4 ppf = compute_ppf(thisPoint, thisNorm, points[i + j], norms[i + j]);
@@ -453,7 +456,7 @@ __global__ void ppf_kernel(float3 *points, float3 *norms, float4 *out, int count
     }
 }
 
-// TODO: increase thread work
+
 __global__ void ppf_hash_kernel(float4 *ppfs, unsigned int *codes, int count){
     if(count <= 1) return;
 
@@ -473,37 +476,6 @@ __global__ void ppf_hash_kernel(float4 *ppfs, unsigned int *codes, int count){
     }
 }
 
-
-
-// during trans_model_scene() (while computing translation vector
-// between scene ref point and model pt:
-// 1) descritize translation vector (probably small multiple of voxel distance)
-// 2) encode disc'd translation vector into long:
-//    [trans vec|idx]
-//    where idx is an index into the global array of votes (slam++ fig 4)
-// 3) sort array of translation vec codes
-// 4) reduce_by_key translation vec code array to get mapping from
-// unique translation vecs to list of code indices (identical to lines 13-16
-// slam++ algorithm 1)
-// 5) for each unique translation vector:
-//       create histogram by accumulating all associated votes
-//       (probably identical to slam++ algorithm 2)
-// 5a) (maybe) smooth adjacent translation vector histograms
-// 6) for each unique translation vector histogram:
-//      find max angle
-//      score according to max angle + neighbors
-// 7) compare score to threshold
-// 8) get list of votes associated with unique trans vec and max angle + neighbors
-// 9) At this point, we have a list of clusters of (scene point, model point, angle)
-//    tuples.
-//    for each tuple:
-//      call trans_model_scene:
-//        a) compute rotation angles for each scene point model point pair
-//        b) average computed angles and alphas from each tuple
-//        c) compute T_m_g, T_s_g, and rotx(alpha) from averaged angles and alphas
-//           and the unique translation vector corresponding to this cluster
-// return drost eqn. 2 as final solution(s)
-//
 
 __global__ void ppf_vote_count_kernel(unsigned int *sceneKeys, std::size_t *sceneIndices,
                                       unsigned int *hashKeys, std::size_t *ppfCount,
@@ -529,7 +501,6 @@ __global__ void ppf_vote_count_kernel(unsigned int *sceneKeys, std::size_t *scen
 }
 
 
-// TODO: increase thread work
 __global__ void ppf_vote_kernel(unsigned int *sceneKeys, std::size_t *sceneIndices,
                                 unsigned int *hashKeys, std::size_t *ppfCount,
                                 std::size_t *firstPPFIndex, std::size_t *key2ppfMap,
@@ -545,13 +516,7 @@ __global__ void ppf_vote_kernel(unsigned int *sceneKeys, std::size_t *sceneIndic
 
     while(idx < count){
         unsigned int thisSceneKey = sceneKeys[idx];
-        // float4 thisScenePPF = scenePPFs[idx];
         unsigned int thisSceneIndex = sceneIndices[idx];
-        // if (isnan(thisScenePPF.x) ||
-        //     thisScenePPF != modelPPFs[thisSceneIndex]){
-        //     idx += blockDim.x * gridDim.x;
-        //     continue;
-        // }
         if (thisSceneKey == 0 ||
             thisSceneKey != hashKeys[thisSceneIndex]){
             idx += blockDim.x * gridDim.x;
@@ -580,56 +545,10 @@ __global__ void ppf_vote_kernel(unsigned int *sceneKeys, std::size_t *sceneIndic
             trans_model_scene(model_r_point, model_r_norm, model_i_point,
                               scene_r_point, scene_r_norm, scene_i_point,
                               d_dist, alpha_idx);
-            // votes_old[idx*modelSize + i] =
-            //     (((unsigned long) scene_r_index) << 32) | (model_r_index << 6) | (alpha_idx);
-            // votes_old[idx*100 + i] =
-            //     (((unsigned long) scene_r_index) << 32) | (model_r_index << 6) | (alpha_idx);
             votes_old[ppf_vote_indices[idx] + i] =
                 (((unsigned long) scene_r_index) << 32) | (model_r_index << 6) | (alpha_idx);
         }
 
-        idx += blockDim.x * gridDim.x;
-    }
-}
-
-/*
-  for(int i = 0; i < unique_vecs.size(); i++){
-    int angle_histogram[32];
-    // do this in parallel, so atomics should be used
-    for(int j = 0; j < vecCounts[i]; j++){
-      voteCode = votes[firstVoteIndex[i] + j];
-      angle_idx = voteCode & low6;
-      angle_histogram[angle_idx]++;
-      
-    }
- */
-
-// TODO: increase thread work
-__global__ void ppf_reduce_rows_kernel(unsigned long *votes, unsigned int *voteCounts,
-                                       unsigned int *firstVoteIndex,
-                                       int n_angle,
-                                       unsigned int *accumulator,
-                                       int count){
-    if(count <= 1) return;
-
-    int ind = threadIdx.x;
-    int idx = ind + blockIdx.x * blockDim.x;
-    unsigned int thisVoteCount, thisVoteIndex;
-    int angle_idx;
-    unsigned long vote;
-
-    unsigned long low6 = ((unsigned long) -1) >> 58;
-
-    while(idx < count){
-        thisVoteCount = voteCounts[idx];
-        thisVoteIndex = firstVoteIndex[idx];
-        for(int i = 0; i < thisVoteCount; i++){
-            vote      = votes[thisVoteIndex+i];
-            if(vote == 0) continue;
-            angle_idx = vote & low6;
-            accumulator[idx*n_angle+angle_idx]++;
-        }
-        //grid stride
         idx += blockDim.x * gridDim.x;
     }
 }

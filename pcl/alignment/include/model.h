@@ -1,18 +1,15 @@
 #ifndef __MODEL_H
 #define __MODEL_H
 
-#include <cuda.h>
-#include <cuda_runtime.h>                // Stops underlining of __global__
 #include <Eigen/Core>
-#include <pcl/point_types.h>
 #include <pcl/point_cloud.h>
+#include <pcl/point_types.h>
 #include <thrust/device_vector.h>
 #include <thrust/host_vector.h>
 
 #include "impl/parallel_hash_array.hpp"
-#include "transformation_clustering.h"
 #include "scene.h"
-#include "debug.h"
+#include "transformation_clustering.h"
 
 class Model : public Scene {
 
@@ -115,7 +112,6 @@ class Model : public Scene {
         thrust::device_vector<float> weightedVoteCounts;
     unsigned int max_idx;
 
-        void accumulateVotes();
 };
 
 

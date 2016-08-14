@@ -3,6 +3,8 @@
 
 #include <iostream>
 
+#include <vector_types.h>
+
 std::ostream& operator<<(std::ostream& out, const float3& obj);
 std::ostream& operator<<(std::ostream& out, const float4& obj);
 

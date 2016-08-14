@@ -1,20 +1,17 @@
 #ifndef PARALLEL_HASH_ARRAY_H
 #define PARALLEL_HASH_ARRAY_H
 
+#include <cstdint>
 #include <cstdlib>
-#include <cuda.h>
-#include <cuda_runtime.h>                // Stops underlining of __global__
-#include <stdint.h>
+
+#include <thrust/binary_search.h>
 #include <thrust/device_vector.h>
 #include <thrust/host_vector.h>
 #include <thrust/scan.h>
 #include <thrust/sequence.h>
 #include <thrust/sort.h>
-#include <thrust/device_vector.h>
-#include <thrust/binary_search.h>
 
-#include "kernel.h"
-#include "impl/ppf_utils.hpp"
+#include "impl/util.hpp"
 
 template<typename T>
 class ParallelHashArray {
@@ -70,7 +67,7 @@ ParallelHashArray<T>::ParallelHashArray(thrust::device_vector<T>& data){
     // Create array of unique hashkeys and their associated counts.
     this->hashkeys = thrust::device_vector<unsigned int>();
     this->counts = thrust::device_vector<std::size_t>();
-    histogram_destructive(data, this->hashkeys, this->counts);
+    histogram(data, this->hashkeys, this->counts);
 
     // Find the indices in hashkeyToDataMap of the beginning of each block of identical hashkeys.
     this->firstHashkeyIndex = thrust::device_vector<std::size_t>(this->hashkeys.size());

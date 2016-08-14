@@ -2,11 +2,10 @@
 #define __KERNEL_H
 
 #include <cstdlib>
-#include <cuda.h>
-#include <cuda_runtime.h>                // Stops underlining of __global__
+
+#include <vector_types.h>
 #include <math_constants.h>
 
-#include "debug.h"
 
 //Launch configuration macros
 #define BLOCK_SIZE 512
@@ -14,12 +13,7 @@
 //Algorithm macros
 #define MIN(X,Y) ((X) < (Y) ? (X) : (Y))
 #define N_ANGLE 30
-#define D_ANGLE0 ((2.0f*float(CUDART_PI_F))/float(N_ANGLE))  //this one is for discretizing the feature in ppf_kernel
-// #define D_DIST 12.161478818129744
-// #define D_DIST 10
-// #define D_DIST 0.035317969013662f  // generated based on MATLAB model_description.m:12, specifically for chair model
-
-// #define TRANS_THRESH (2*D_DIST)
+#define D_ANGLE0 ((2.0f*float(CUDART_PI_F))/float(N_ANGLE))
 #define ROT_THRESH (2*D_ANGLE0)
 #define SCORE_THRESHOLD 0
 
@@ -80,12 +74,6 @@ __global__ void ppf_vote_kernel(unsigned int *sceneKeys, std::size_t *sceneIndic
                                 float3 *scenePoints, float3 *sceneNormals, int sceneSize,
                                 unsigned long *ppf_vote_indices,
                                 unsigned long *votes, int count, float d_dist);
-
-__global__ void ppf_reduce_rows_kernel(unsigned long *votes, unsigned int *voteCounts,
-                                       unsigned int *firstVoteIndex,
-                                       int n_angle,
-                                       unsigned int *accumulator,
-                                       int count);
 
 __global__ void ppf_score_kernel(unsigned int *accumulator,
                                  unsigned int *maxidx,

@@ -1,8 +1,56 @@
 #ifndef UTIL_IMPL_H
 #define UTIL_IMPL_H
 
+#include <cstdio>
+#include <cstdlib>
+
+#include <boost/format.hpp>
+#include <boost/log/trivial.hpp>
+#include <cuda.h>
 #include <Eigen/Core>
 #include <thrust/device_vector.h>
+#include <thrust/functional.h>
+#include <thrust/inner_product.h>
+#include <thrust/iterator/constant_iterator.h>
+#include <thrust/reduce.h>
+
+
+static void HandleError(cudaError_t err, const char *file, int line){
+    if(err != cudaSuccess){
+        fprintf(stderr, "%s in %s at line %d\n", cudaGetErrorString(err),
+                file, line);
+        exit(EXIT_FAILURE);
+    }
+}
+
+#define HANDLE_ERROR(err) (HandleError(err, __FILE__, __LINE__ ))
+
+#define RAW_PTR(V) thrust::raw_pointer_cast(V->data())
+
+template <typename Vector1, typename Vector2, typename Vector3>
+void histogram(const Vector1& input,  // assumed to be already sorted
+               Vector2& histogram_values,
+               Vector3& histogram_counts){
+    typedef typename Vector1::value_type ValueType; // input value type
+    typedef typename Vector3::value_type IndexType; // histogram index type
+
+    thrust::device_vector<ValueType> data(input);
+    IndexType num_bins = thrust::inner_product(data.begin(), data.end() - 1,
+                                               data.begin() + 1,
+                                               IndexType(1),
+                                               thrust::plus<IndexType>(),
+                                               thrust::not_equal_to<ValueType>());
+    histogram_values.resize(num_bins);
+    histogram_counts.resize(num_bins);
+
+    BOOST_LOG_TRIVIAL(debug) << boost::format("num_bins: %d") % num_bins;
+
+    thrust::reduce_by_key(data.begin(), data.end(),
+                          thrust::constant_iterator<IndexType>(1),
+                          histogram_values.begin(),
+                          histogram_counts.begin());
+}
+
 
 template <typename T>
 void write_array(const char *filename, T *data, int n){
@@ -24,6 +72,7 @@ void write_array(const char *filename, T *data, int n){
     }
 }
 
+
 template <typename T>
 void write_device_array(const char *filename, T *data, int n){
     T *host_array = new T[n];
@@ -40,6 +89,7 @@ template <typename T>
 void write_device_vector(const char *filename, thrust::device_vector<T> *data){
     write_device_array(filename, RAW_PTR(data), data->size());
 }
+
 
 // http://eigen.tuxfamily.org/bz/show_bug.cgi?id=622
 template<typename Derived>

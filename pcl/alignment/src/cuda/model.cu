@@ -1,52 +1,38 @@
+#include "model.h"
+
 #include <algorithm>
+#include <cstdio>
 #include <iterator>
-#include <stdio.h>
+
 #include <boost/format.hpp>
 #include <boost/log/trivial.hpp>
 #include <cuda.h>
 #include <Eigen/Geometry>
-#include <pcl/point_types.h>
 #include <pcl/point_cloud.h>
+#include <pcl/point_types.h>
+#include <thrust/binary_search.h>
 #include <thrust/device_ptr.h>
+#include <thrust/device_vector.h>
 #include <thrust/extrema.h>
-#include <thrust/sort.h>
 #include <thrust/inner_product.h>
 #include <thrust/iterator/constant_iterator.h>
 #include <thrust/scan.h>
 #include <thrust/sequence.h>
 #include <thrust/sort.h>
-#include <thrust/device_vector.h>
-#include <thrust/binary_search.h>
+#include <vector_types.h>
 
-#include "model.h"
-#include "impl/ppf_utils.hpp"
-#include "impl/util.hpp"
 #include "impl/parallel_hash_array.hpp"
 #include "impl/scene_generation.hpp"
+#include "impl/util.hpp"
 #include "kernel.h"
-#include "book.h"
-#include "transformation_clustering.h"
 #include "linalg.h"
+#include "transformation_clustering.h"
 
 
 template <int value>
 struct is_greaterthan{
     __host__ __device__ bool operator()(const unsigned int x){
         return x > value;
-    }
-};
-
-struct high_32_bits : public thrust::unary_function<unsigned long,unsigned int>{
-    __host__ __device__
-    unsigned int operator()(unsigned long i) const {
-        return (unsigned int) (i >> 32);
-    }
-};
-
-struct low_32_bits : public thrust::unary_function<unsigned long,unsigned int>{
-    __host__ __device__
-    unsigned int operator()(unsigned long i) const {
-        return (unsigned int) (i & (-1ul >> 32));
     }
 };
 
@@ -80,27 +66,6 @@ Model::Model(pcl::PointCloud<pcl::PointNormal> *cloud, float d_dist,
     this->initPPFs(points, normals, cloud_ptr->size(), d_dist);
     this->modelPointVoteWeights = thrust::device_vector<float>(n, 1.0);
 
-    // thrust::host_vector<float3> *host_model_normals =
-    //     new thrust::host_vector<float3>(*this->modelNormals);
-    // for(int i = 0; i < host_model_normals->size(); i++){
-    //     /* DEBUG */
-    //     fprintf(stdout, "host_model_modelnormals[%u]: %f, %f, %f,\n", i,
-    //             (*host_model_normals)[i].x, (*host_model_normals)[i].y, (*host_model_normals)[i].z);
-    //     /* DEBUG */
-    // }
-
-
-    // thrust::host_vector<float4> *host_model_modelppfs =
-    //     new thrust::host_vector<float4>(*this->modelPPFs);
-    // for(int i = 0; i < host_model_modelppfs->size(); i++){
-    //     /* DEBUG */
-    //     fprintf(stdout, "host_model_modelppfs[%u]: %f, %f, %f, %f\n", i,
-    //             (*host_model_modelppfs)[i].x, (*host_model_modelppfs)[i].y, (*host_model_modelppfs)[i].z,
-    //             (*host_model_modelppfs)[i].w);
-    //     /* DEBUG */
-    // }
-
-
     // For each element of data, compute a 32-bit hash,
     thrust::device_vector<unsigned int> nonunique_hashkeys =
         thrust::device_vector<unsigned int>(this->modelPPFs->size());
@@ -108,14 +73,6 @@ Model::Model(pcl::PointCloud<pcl::PointNormal> *cloud, float d_dist,
     ppf_hash_kernel<<<blocks,BLOCK_SIZE>>>(RAW_PTR(this->modelPPFs),
                                            thrust::raw_pointer_cast(nonunique_hashkeys.data()),
                                            this->modelPPFs->size());
-
-    // thrust::host_vector<std::size_t> *host_model_nnh =
-    //     new thrust::host_vector<std::size_t>(nonunique_hashkeys);
-    // for(int i = 0; i < host_model_nnh->size(); i++){
-    //     /* DEBUG */
-    //     fprintf(stdout, "host_model_nnh[%u]: %u\n", i, (*host_model_nnh)[i]);
-    //     /* DEBUG */
-    // }
 
     HANDLE_ERROR(cudaPeekAtLastError());
     HANDLE_ERROR(cudaDeviceSynchronize());
@@ -191,7 +148,7 @@ void Model::ComputeUniqueVotes(Scene *scene){
     thrust::sort(nonunique_nonempty_votes->begin(), nonunique_nonempty_votes->end());
     this->votes = new thrust::device_vector<unsigned long>();
     this->voteCounts = new thrust::device_vector<unsigned int>();
-    histogram_destructive(*nonunique_nonempty_votes, *(this->votes), *(this->voteCounts));
+    histogram(*nonunique_nonempty_votes, *(this->votes), *(this->voteCounts));
     BOOST_LOG_TRIVIAL(debug) << boost::format("num_unique_votes: %lu") % this->votes->size();
     delete nonunique_nonempty_votes;
 
@@ -318,18 +275,10 @@ void Model::ppf_lookup(Scene *scene){
         HANDLE_ERROR(cudaEventRecord(start, 0));
     #endif
 
-    // Steps 1-3
-    // launch voting kernel instance for each scene reference point
     ComputeUniqueVotes(scene);
     ComputeTransformations(scene);
     BOOST_LOG_TRIVIAL(debug) << boost::format("votes_size: %lu") % this->votes->size();
 
-    // thrust::host_vector<float>host_weights(this->modelPointVoteWeights);
-    // for(int i = 0; i < host_weights.size(); i++){
-    //     /* DEBUG */
-    //     fprintf(stderr, "modelPointVoteWeights[%d]: %f\n", i, host_weights[i]);
-    //     /* DEBUG */
-    // }
 
     this->weightedVoteCounts =
         ComputeWeightedVoteCounts(*(this->votes),
@@ -354,12 +303,6 @@ void Model::ppf_lookup(Scene *scene){
     HANDLE_ERROR(cudaEventElapsedTime(&elapsedTime, start, stop));
     BOOST_LOG_TRIVIAL(info) << boost::format("Time to lookup model:  %3.1f ms") % elapsedTime;
 #endif
-}
-
-void Model::accumulateVotes(){
-    this->voteCodes = new thrust::device_vector<unsigned long>();
-    this->voteCounts = new thrust::device_vector<unsigned int>();
-    histogram(*(this->votes), *(this->voteCodes), *(this->voteCounts));
 }
 
 thrust::device_vector<float> Model::getTransformations(){

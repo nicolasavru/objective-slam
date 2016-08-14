@@ -1,19 +1,22 @@
-#include <stdio.h>
+#include "scene.h"
+
+#include <cstdio>
+
 #include <boost/format.hpp>
 #include <boost/log/trivial.hpp>
 #include <cuda.h>
-#include <pcl/point_types.h>
 #include <pcl/point_cloud.h>
-#include <thrust/sort.h>
+#include <pcl/point_types.h>
+#include <thrust/binary_search.h>
 #include <thrust/inner_product.h>
 #include <thrust/iterator/constant_iterator.h>
 #include <thrust/scan.h>
-#include <thrust/binary_search.h>
+#include <thrust/sort.h>
+#include <vector_types.h>
 
-#include "scene.h"
-#include "kernel.h"
-#include "book.h"
 #include "impl/util.hpp"
+#include "kernel.h"
+
 
 Scene::Scene(){}
 
@@ -40,23 +43,6 @@ Scene::Scene(pcl::PointCloud<pcl::PointNormal> *cloud_ptr, float d_dist,
 
     this->initPPFs(points, normals, cloud_ptr->size(), d_dist,
                    ref_point_downsample_factor);
-    // thrust::host_vector<float3> *host_scene_modelnormals =
-    //     new thrust::host_vector<float3>(*this->modelNormals);
-    // for(int i = 0; i < host_scene_modelnormals->size(); i++){
-    //     /* DEBUG */
-    //     fprintf(stdout, "host_scene_modelnormals[%u]: %f, %f, %f\n", i,
-    //             (*host_scene_modelnormals)[i].x, (*host_scene_modelnormals)[i].y, (*host_scene_modelnormals)[i].z);
-    //     /* DEBUG */
-    // }
-    // thrust::host_vector<float4> *host_scene_modelppfs =
-    //     new thrust::host_vector<float4>(*this->modelPPFs);
-    // for(int i = 0; i < host_scene_modelppfs->size(); i++){
-    //     /* DEBUG */
-    //     fprintf(stdout, "host_scene_modelppfs[%u]: %f, %f, %f, %f\n", i,
-    //             (*host_scene_modelppfs)[i].x, (*host_scene_modelppfs)[i].y, (*host_scene_modelppfs)[i].z,
-    //             (*host_scene_modelppfs)[i].w);
-    //     /* DEBUG */
-    // }
 
     HANDLE_ERROR(cudaGetLastError());
     HANDLE_ERROR(cudaDeviceSynchronize());
@@ -66,14 +52,6 @@ Scene::Scene(pcl::PointCloud<pcl::PointNormal> *cloud_ptr, float d_dist,
     ppf_hash_kernel<<<blocks,BLOCK_SIZE>>>(RAW_PTR(this->modelPPFs),
                                            RAW_PTR(this->hashKeys),
                                            this->modelPPFs->size());
-    // thrust::host_vector<std::size_t> *host_scene_hashkeys_init =
-    //     new thrust::host_vector<std::size_t>(*this->hashKeys);
-    // for(int i = 0; i < host_scene_hashkeys_init->size(); i++){
-    //     /* DEBUG */
-    //     fprintf(stdout, "host_scene_hashkeys_init[%u]: %u\n", i, (*host_scene_hashkeys_init)[i]);
-    //     /* DEBUG */
-    // }
-
 }
 
 Scene::~Scene(){
@@ -102,7 +80,6 @@ void Scene::initPPFs(thrust::host_vector<float3> *points, thrust::host_vector<fl
 
     // This will crash if n = 0;
     int blocks = std::min(((int)(this->n + BLOCK_SIZE) - 1) / BLOCK_SIZE, MAX_NBLOCKS);
-    // MATLAB drost.m:59, all of model_description.m
     // ppf_kernel computes ppfs and descritizes them, but does *not* hash them
     // hashing is done by ppf_hash_kernel, called only for model, not scene (model.cu:46)
     ppf_kernel<<<blocks,BLOCK_SIZE>>>(RAW_PTR(this->modelPoints),

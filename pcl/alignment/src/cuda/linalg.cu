@@ -1,5 +1,7 @@
-#include <cuda.h>
+#include "linalg.h"
+
 #include <Eigen/Geometry>
+#include <vector_types.h>
 
 #include "vector_ops.h"
 #include "kernel.h"

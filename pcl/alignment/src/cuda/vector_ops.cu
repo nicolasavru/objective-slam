@@ -1,9 +1,7 @@
-#include <cuda.h>
-#include <cuda_runtime.h>                // Stops underlining of __global__
-#include <thrust/device_vector.h>
+#include "vector_ops.h"
+
 #include <iostream>
 
-#include "vector_ops.h"
 
 std::ostream& operator<<(std::ostream& out, const float3& obj){
     out << obj.x << ", " << obj.y << ", " << obj.z;

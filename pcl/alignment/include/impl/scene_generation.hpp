@@ -1,27 +1,16 @@
 #ifndef SCENE_GENERATION_H
 #define SCENE_GENERATION_H
 
-#include <stdlib.h>
-#include <time.h>
 #include <cmath>
+#include <cstdlib>
+#include <ctime>
+
 #include <Eigen/Core>
-#include <cuda.h>
-#include <cuda_runtime.h>                // Stops underlining of __global__
-#include <pcl/point_types.h>
+#include <pcl/common/centroid.h>
+#include <pcl/common/transforms.h>
 #include <pcl/point_cloud.h>
-#include <pcl/common/time.h>
-#include <pcl/console/print.h>
-#include <pcl/features/normal_3d_omp.h>
-#include <pcl/features/fpfh_omp.h>
-#include <pcl/features/ppf.h>
-#include <pcl/filters/filter.h>
-#include <pcl/registration/icp.h>
-#include <pcl/registration/ppf_registration.h>
-#include <pcl/registration/sample_consensus_prerejective.h>
-#include <pcl/segmentation/sac_segmentation.h>
-#include <pcl/visualization/pcl_visualizer.h>
-#include <pcl/kdtree/kdtree_flann.h>
-#include <pcl/features/normal_3d.h>
+#include <pcl/point_types.h>
+#include <vector_types.h>
 
 #include "ppf.h"
 #include "vector_ops.h"
@@ -112,8 +101,6 @@ void CenterScene(typename pcl::PointCloud<Point>& scene){
     // is this a memory leak?
     scene = transformed_scene;
 }
-
-
 
 
 #endif /* SCENE_GENERATION_H */

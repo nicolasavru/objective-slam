@@ -1,22 +1,16 @@
-#include <stdio.h>
-#include <stdlib.h>
-
-#include <iostream>
+#include <cstdio>
+#include <cstdlib>
 #include <fstream>
+#include <iostream>
+#include <vector>
 
 #include <boost/format.hpp>
 #include <boost/log/core.hpp>
 #include <boost/log/trivial.hpp>
-// #include <boost/log/expressions.hpp>
-// #include <boost/log/sinks/text_file_backend.hpp>
 #include <boost/log/utility/setup/file.hpp>
 #include <boost/log/utility/setup/common_attributes.hpp>
-// #include <boost/log/sources/severity_logger.hpp>
-// #include <boost/log/sources/record_ostream.hpp>
 #include <boost/program_options.hpp>
 #include <Eigen/Core>
-#include <cuda.h>
-#include <cuda_runtime.h>                // Stops underlining of __global__
 #include <pcl/point_types.h>
 #include <pcl/point_cloud.h>
 #include <pcl/common/angles.h>
@@ -41,7 +35,7 @@
 #include <pcl/visualization/point_cloud_color_handlers.h>
 #include <pcl/kdtree/kdtree_flann.h>
 #include <pcl/features/normal_3d.h>
-#include <vector>
+#include <vector_types.h>
 
 #include "ppf.h"
 #include "vector_ops.h"
@@ -52,9 +46,7 @@
 #include "kernel.h"
 
 // Types
-// typedef pcl::FPFHSignature33 FeatureT;
 typedef pcl::PPFSignature FeatureT;
-// typedef pcl::FPFHEstimationOMP<pcl::PointNormal,pcl::PointNormal,FeatureT> FeatureEstimationT;
 typedef pcl::PPFEstimation<pcl::PointNormal, pcl::PointNormal, FeatureT> FeatureEstimationT;
 typedef pcl::PointCloud<FeatureT> FeatureCloudT;
 
@@ -219,7 +211,6 @@ void init_logging(po::variables_map vm){
     }
 };
 
-// Align a rigid object to a scene with clutter and occlusions
 int main(int argc, char **argv){
     srand(time(0));
     po::variables_map vm = configure_options(argc, argv);
@@ -232,8 +223,6 @@ int main(int argc, char **argv){
     }
     BOOST_LOG_TRIVIAL(info) << argv_string;
 
-    // Load model and scene
-    // MATLAB drost.m:5-39
     float scene_leaf_size = vm["scene_leaf_size"].as<float>();
     std::vector<float> scene_d_dists;
     std::vector<pcl::PointCloud<pcl::PointNormal>::Ptr> scene_clouds;
@@ -292,21 +281,14 @@ int main(int argc, char **argv){
 
     // Downsample
     BOOST_LOG_TRIVIAL(info) << "Downsampling...";
-    int model_n = 50;
-    int scene_n = 50;
-    // int model_n = 1000;
-    // int scene_n = 500;
-    int empty_scene_n = 1000;
 
     // shared_ptr &operator=(shared_ptr const &r) is equivalent to shared_ptr(r).swap(*this),
-    // so, in teach loop, the original cloud gets de-allocated when new_* goes out of scope.
+    // so, in each loop, the original cloud gets de-allocated when new_* goes out of scope.
     // http://www.boost.org/doc/libs/1_60_0/libs/smart_ptr/shared_ptr.htm#assignment
     for(pcl::PointCloud<pcl::PointNormal>::Ptr& scene: scene_clouds){
         BOOST_LOG_TRIVIAL(info) <<
             boost::format("Scene size before filtering: %u (%u x %u)") %
             scene->size() % scene->width % scene->height;
-        // scene = sequentialDownsample<pcl::PointNormal>(scene, scene_n);
-        // scene = randomDownsample<pcl::PointNormal>(scene, 2500.0/scene->size());
         pcl::PointCloud<pcl::PointNormal>::Ptr new_scene =
             voxelGridDownsample<pcl::PointNormal>(scene, scene_leaf_size);
         scene = new_scene;
@@ -320,8 +302,6 @@ int main(int argc, char **argv){
         BOOST_LOG_TRIVIAL(info) <<
             boost::format("Model size before filtering: %u (%u x %u)") %
             model->size() % model->width % model->height;
-        // model = sequentialDownsample<pcl::PointNormal>(model, model_n);
-        // model = randomDownsample<pcl::PointNormal>(model, 2500.0/model->size());
         pcl::PointCloud<pcl::PointNormal>::Ptr new_model =
             voxelGridDownsample<pcl::PointNormal>(model, model_d_dists[i]);
         BOOST_LOG_TRIVIAL(info) <<
@@ -330,46 +310,6 @@ int main(int argc, char **argv){
         model_clouds[i] = new_model;
     }
 
-    // // Estimate normals for object
-    // pcl::console::print_highlight("Estimating object normals...\n");
-    // // pcl::NormalEstimationOMP<pcl::PointNormal, pcl::PointNormal> nest_obj;
-    // pcl::NormalEstimation<pcl::PointNormal, pcl::PointNormal> nest_obj;
-    // nest_obj.setRadiusSearch(0.1);
-    // // pcl::search::KdTree<pcl::PointNormal>::Ptr tree (new pcl::search::KdTree<pcl::PointNormal>);
-    // // nest_obj.setSearchMethod (tree);
-    // // nest_obj.setKSearch(15);
-    // nest_obj.setInputCloud(object);
-    // nest_obj.compute(*object);
-
-    // // Estimate normals for scene
-    // pcl::console::print_highlight("Estimating scene normals...\n");
-    // // pcl::NormalEstimationOMP<pcl::PointNormal, pcl::PointNormal> nest_scene;
-    // pcl::NormalEstimation<pcl::PointNormal, pcl::PointNormal> nest_scene;
-    // nest_scene.setRadiusSearch(0.3);
-    // // pcl::search::KdTree<pcl::PointNormal>::Ptr tree_scene (new pcl::search::KdTree<pcl::PointNormal>);
-    // // nest_obj.setSearchMethod (tree_scene);
-    // // nest_scene.setKSearch(15);
-    // nest_scene.setInputCloud(scene);
-    // nest_scene.compute(*scene);
-
-    // CenterScene(*scene);
-
-    // MATLAB drost.m 59-63 model_description() and voting_scheme()
-    // pass in object and scene, get back transformation matching object to scene
-    // pcl::PointCloud<pcl::PointNormal> test_cloud = pcl::PointCloud<pcl::PointNormal>(*scene);
-    // pcl::PointCloud<pcl::PointNormal> *test_cloud2 = new pcl::PointCloud<pcl::PointNormal>(
-    //     *scene_clouds[0]);
-    // /* DEBUG */
-    // fprintf(stderr, "foo0: %p, %lu, %lu\n", scene.get(), scene.get()->points.size(), scene.get()->size());
-    // fprintf(stderr, "foo0: %p, %lu, %lu\n", &test_cloud, (&test_cloud)->points.size(), (&test_cloud)->size());
-    // // fprintf(stderr, "foo0: %p, %d, %d\n", test_cloud2, test_cloud2->points.size(), test_cloud2->size());
-    // ptr_test(test_cloud2);
-    // ptr_test_cu(test_cloud2);
-    // ptr_test_cu2(*test_cloud2);
-    // ptr_test_cu3(*test_cloud2);
-    // ptr_test_cu4(*test_cloud2);
-    /* DEBUG */
-    // float *model_weights = (float *)malloc(model->size()*sizeof(float));
     std::vector<std::vector<Eigen::Matrix4f>> results =
         ppf_registration(scene_clouds, model_clouds,
                          model_d_dists, vm["ref_point_df"].as<unsigned int>(),
@@ -379,20 +319,6 @@ int main(int argc, char **argv){
                          vm["use_averaged_clusters"].as<bool>(),
                          vm["dev"].as<int>(),
                          NULL);
-
-    // pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr color_cloud(new pcl::PointCloud<pcl::PointXYZRGBNormal>);
-    // pcl::copyPointCloud(*model, *color_cloud);
-    // for(int i = 0; i < model->size(); i++){
-    //     float weight = model_weights[i]/8;
-    //     uint8_t r = (uint8_t) (255*weight);
-    //     uint8_t g = (uint8_t) (165*weight);
-    //     uint8_t b = (uint8_t) (0*weight);
-    //     uint32_t rgb =
-    //         static_cast<uint32_t>(r) << 16 |
-    //         static_cast<uint32_t>(g) << 8  |
-    //         static_cast<uint32_t>(b);
-    //     (*color_cloud)[i].rgb = *reinterpret_cast<float *>(&rgb);
-    // }
 
     if(vm.count("validation_files")){
         CommaSeparatedVector validation_files = vm["validation_files"].as<CommaSeparatedVector>();
@@ -430,8 +356,7 @@ int main(int argc, char **argv){
             }
         }
     }
-    // MATLAB drost.m:80-108
-    // cout << T << endl;
+
     if(vm["visualize"].as<bool>()){
         boost::shared_ptr<pcl::visualization::PCLVisualizer> viewer(
             new pcl::visualization::PCLVisualizer ("3D Viewer"));
@@ -456,15 +381,6 @@ int main(int argc, char **argv){
                     scene_clouds[i], scene_clouds[i], 1, 3, *cloud_normals_id);
             }
         }
-
-        // pcl::visualization::PointCloudColorHandlerCustom<pcl::PointNormal> red_color(model, 255, 0, 0);
-        // viewer->addPointCloud<pcl::PointNormal>(model, red_color, "model");
-        // viewer->addPointCloudNormals<pcl::PointNormal, pcl::PointNormal>(model, model, 5, 0.05, "model_normals");
-        // viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "model");
-
-        // pcl::visualization::PointCloudColorHandlerRGBField<pcl::PointXYZRGBNormal> rgb_color(color_cloud);
-        // viewer->addPointCloud<pcl::PointXYZRGBNormal>(color_cloud, rgb_color, "color_cloud");
-        // viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "color_cloud");
 
         cycle_iterator<std::vector<uchar3>::iterator> color_it(colors.begin(), colors.end());
         for(int i = 0; i < scene_clouds.size(); i++){
@@ -502,92 +418,5 @@ int main(int argc, char **argv){
         }
     }
 
-//    // // Estimate features
-//    // pcl::console::print_highlight ("Estimating features...\n");
-//    // FeatureEstimationT fest;
-//    // fest.setRadiusSearch (0.025);
-//    // fest.setInputCloud (object);
-//    // fest.setInputNormals (object);
-//    // fest.compute (*object_features);
-//    // fest.setInputCloud (scene);
-//    // fest.setInputNormals (scene);
-//    // fest.compute (*scene_features);
-//
-//    // Estimate features
-//    FeatureEstimationT fest;
-//    // fest.setRadiusSearch (0.025);
-//    pcl::console::print_highlight("Estimating object features...\n");
-//    fest.setInputCloud(object);
-//    fest.setInputNormals(object);
-//    fest.compute(*object_features);
-//    // pcl::console::print_highlight ("Estimating scene features...\n");
-//    // fest.setInputCloud (scene);
-//    // fest.setInputNormals (scene);
-//    // fest.compute (*scene_features);
-//
-//    // // Perform alignment
-//    // pcl::console::print_highlight ("Starting alignment...\n");
-//    // pcl::SampleConsensusPrerejective<PointNT,PointNT,FeatureT> align;
-//    // align.setInputSource (object);
-//    // align.setSourceFeatures (object_features);
-//    // align.setInputTarget (scene);
-//    // align.setTargetFeatures (scene_features);
-//    // align.setNumberOfSamples (3); // Number of points to sample for generating/prerejecting a pose
-//    // align.setCorrespondenceRandomness (2); // Number of nearest features to use
-//    // align.setSimilarityThreshold (0.6f); // Polygonal edge length similarity threshold
-//    // align.setMaxCorrespondenceDistance (1.5f * leaf); // Set inlier threshold
-//    // align.setInlierFraction (0.25f); // Set required inlier fraction
-//    // align.align (*object_aligned);
-//
-//    pcl::PPFHashMapSearch::Ptr searcher(new pcl::PPFHashMapSearch);
-//    searcher->setInputFeatureCloud(object_features);
-//
-//    // Perform alignment
-//    pcl::console::print_highlight("Starting alignment...\n");
-//    pcl::PPFRegistration<PointNT, PointNT> align;
-//    align.setInputSource(object);
-//    // align.setSourceFeatures (object_features);
-//    align.setInputTarget(scene);
-//    align.setSearchMethod(searcher);
-//    // align.setTargetFeatures (scene_features);
-//    // align.setNumberOfSamples (3); // Number of points to sample for generating/prerejecting a pose
-//    // align.setCorrespondenceRandomness (2); // Number of nearest features to use
-//    // align.setSimilarityThreshold (0.6f); // Polygonal edge length similarity threshold
-//    // align.setMaxCorrespondenceDistance (1.5f * leaf); // Set inlier threshold
-//    // align.setInlierFraction (0.25f); // Set required inlier fraction
-//    align.align(*object_aligned);
-//
-//    if (align.hasConverged()) {
-//        // Print results
-//        Eigen::Matrix4f transformation = align.getFinalTransformation();
-//        pcl::console::print_info("    | %6.3f %6.3f %6.3f | \n",
-//                transformation(0, 0), transformation(0, 1),
-//                transformation(0, 2));
-//        pcl::console::print_info("R = | %6.3f %6.3f %6.3f | \n",
-//                transformation(1, 0), transformation(1, 1),
-//                transformation(1, 2));
-//        pcl::console::print_info("    | %6.3f %6.3f %6.3f | \n",
-//                transformation(2, 0), transformation(2, 1),
-//                transformation(2, 2));
-//        pcl::console::print_info("\n");
-//        pcl::console::print_info("t = < %0.3f, %0.3f, %0.3f >\n",
-//                transformation(0, 3), transformation(1, 3),
-//                transformation(2, 3));
-//        pcl::console::print_info("\n");
-//        // pcl::console::print_info ("Inliers: %i/%i\n", align.getInliers ().size (), object->size ());
-//
-//        // Show alignment
-//        pcl::visualization::PCLVisualizer visu("Alignment");
-//        visu.addPointCloud(scene, ColorHandlerT(scene, 0.0, 255.0, 0.0),
-//                "scene");
-//        visu.addPointCloud(object_aligned,
-//                ColorHandlerT(object_aligned, 0.0, 0.0, 255.0),
-//                "object_aligned");
-//        visu.spin();
-//    } else {
-//        pcl::console::print_error("Alignment failed!\n");
-//        return (1);
-//    }
-
-    return (0);
+    return 0;
 }
