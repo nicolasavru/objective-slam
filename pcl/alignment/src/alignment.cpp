@@ -11,49 +11,26 @@
 #include <boost/log/utility/setup/common_attributes.hpp>
 #include <boost/program_options.hpp>
 #include <Eigen/Core>
-#include <pcl/point_types.h>
 #include <pcl/point_cloud.h>
+#include <pcl/point_types.h>
 #include <pcl/common/angles.h>
 #include <pcl/common/distances.h>
-#include <pcl/common/geometry.h>
-#include <pcl/common/time.h>
-#include <pcl/console/print.h>
-#include <pcl/features/normal_3d_omp.h>
-#include <pcl/features/fpfh_omp.h>
-#include <pcl/features/ppf.h>
-#include <pcl/filters/filter.h>
 #include <pcl/filters/random_sample.h>
 #include <pcl/filters/uniform_sampling.h>
 #include <pcl/filters/voxel_grid.h>
-#include <pcl/io/pcd_io.h>
 #include <pcl/io/ply_io.h>
-#include <pcl/registration/icp.h>
-#include <pcl/registration/ppf_registration.h>
-#include <pcl/registration/sample_consensus_prerejective.h>
-#include <pcl/segmentation/sac_segmentation.h>
 #include <pcl/visualization/pcl_visualizer.h>
 #include <pcl/visualization/point_cloud_color_handlers.h>
-#include <pcl/kdtree/kdtree_flann.h>
-#include <pcl/features/normal_3d.h>
 #include <vector_types.h>
 
-#include "ppf.h"
-#include "vector_ops.h"
 #include "impl/cycle_iterator.hpp"
 #include "impl/scene_generation.hpp"
 #include "impl/util.hpp"
-#include "linalg.h"
 #include "kernel.h"
+#include "linalg.h"
+#include "ppf.h"
+#include "vector_ops.h"
 
-// Types
-typedef pcl::PPFSignature FeatureT;
-typedef pcl::PPFEstimation<pcl::PointNormal, pcl::PointNormal, FeatureT> FeatureEstimationT;
-typedef pcl::PointCloud<FeatureT> FeatureCloudT;
-
-void ptr_test(pcl::PointCloud<pcl::PointNormal> *scene_cloud_ptr){
-    BOOST_LOG_TRIVIAL(debug) << boost::format("foo-1: %p, %lu, %lu") %
-        scene_cloud_ptr % scene_cloud_ptr->points.size() % scene_cloud_ptr->size();
-}
 
 std::vector<uchar3> colors = {
     uchar3{255,   0, 0},   // red
@@ -267,7 +244,7 @@ int main(int argc, char **argv){
         }
 
         pcl::PointNormal minPt, maxPt;
-        // Finding the max pairwise distance is epxensive, to
+        // Finding the max pairwise distance is epxensive, so
         // approximate it with the max difference between coords.
         pcl::getMinMax3D(*model_clouds.back(), minPt, maxPt);
         float3 model_diam = {maxPt.x - minPt.x,
